@@ -1,36 +1,18 @@
-import { supabase, getSession, signOut } from './lib/supabase.js'
-import { renderLogin } from './pages/login.js'
-import { renderApp } from './pages/app.js'
-
-let currentUser = null
-
-async function init() {
-  const session = await getSession()
-  if (session) {
-    currentUser = session.user
-    renderApp(document.getElementById('app'), currentUser, logout)
-  } else {
-    renderLogin(document.getElementById('app'), onLogin)
-  }
-
-  supabase.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_IN' && session) {
-      currentUser = session.user
-      renderApp(document.getElementById('app'), currentUser, logout)
-    } else if (event === 'SIGNED_OUT') {
-      currentUser = null
-      renderLogin(document.getElementById('app'), onLogin)
-    }
-  })
-}
-
-function onLogin(user) {
-  currentUser = user
-  renderApp(document.getElementById('app'), currentUser, logout)
-}
-
-async function logout() {
-  await signOut()
-}
-
-init()
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GSO Quotation App</title>
+</head>
+<body>
+  <div id="app">
+    <div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;font-family:system-ui;">
+      <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#002060;border-radius:50%;animation:spin .7s linear infinite;"></div>
+      <div style="color:#64748b;">Memuat GSO App...</div>
+    </div>
+  </div>
+  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
