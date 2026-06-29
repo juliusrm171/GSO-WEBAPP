@@ -1,0 +1,5 @@
+# Copy file ini jadi .env dan isi dengan nilai dari Supabase Dashboard
+# Settings > API > Project URL dan anon key
+
+VITE_SUPABASE_URL=https://XXXXXXXXXXXXXXXX.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.XXXXXXXXXXXXXXXXX

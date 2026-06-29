@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GSO Quotation App</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23002060'/><text y='.9em' font-size='70' x='50%' text-anchor='middle' fill='white' font-family='system-ui' font-weight='bold'>G</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f0f3f8; color: #1e293b; font-size: 13px; }
+    #app { min-height: 100vh; }
+    .loading { display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; gap: 12px; }
+    .loading-spinner { width: 32px; height: 32px; border: 3px solid #e2e8f0; border-top-color: #002060; border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="loading">
+      <div class="loading-spinner"></div>
+      <div style="color:#64748b;font-size:13px;">Memuat GSO App...</div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
