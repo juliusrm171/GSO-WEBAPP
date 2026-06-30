@@ -1,4 +1,4 @@
-import { signIn, signUp, resetPassword, updatePassword } from '../lib/supabase.js'
+import { signIn, signUp, resetPassword, updatePassword, signOut } from '../lib/supabase.js'
 
 export function renderLogin(container, onSuccess) {
   container.innerHTML = `
@@ -152,9 +152,12 @@ export function renderLogin(container, onSuccess) {
     btn.disabled = true; btn.textContent = 'Menyimpan...'
     try {
       await updatePassword(p1)
-      showOk('Password berhasil diubah! Silakan masuk dengan password baru.')
+      await signOut()
       window.history.replaceState({}, '', window.location.pathname)
-      setTimeout(() => window.switchTab('login'), 1500)
+      document.getElementById('form-newpass').style.display = 'none'
+      document.getElementById('auth-tabs').style.display = ''
+      window.switchTab('login')
+      showOk('Password berhasil diubah! Silakan masuk dengan password baru.')
     } catch (e) {
       showErr(e.message)
     }
