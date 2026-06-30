@@ -139,6 +139,93 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 @keyframes spin{to{transform:rotate(360deg)}}
 .empty{text-align:center;padding:2rem;color:#94a3b8;font-size:12px;}
 .my-badge{background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:6px;font-size:10px;font-weight:500;margin-left:4px;}
+
+/* DASHBOARD */
+.db-greet{font-size:18px;font-weight:600;color:#1e293b;margin-bottom:1rem;}
+.db-greet span{color:#002060;}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.bar-label{width:90px;font-size:11px;color:#64748b;flex-shrink:0;}
+.bar-track{flex:1;height:18px;background:#f1f5f9;border-radius:9px;overflow:hidden;position:relative;}
+.bar-fill{height:100%;border-radius:9px;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;font-size:9px;color:#fff;font-weight:600;white-space:nowrap;transition:width .4s;}
+.bar-val{width:70px;text-align:right;font-size:11px;font-weight:600;color:#002060;flex-shrink:0;}
+.lb-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;}
+.lb-row:last-child{border:none;}
+.lb-rank{width:22px;height:22px;border-radius:50%;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.lb-rank.r1{background:#fef3c7;color:#92400e;}
+.lb-rank.r2{background:#e2e8f0;color:#475569;}
+.lb-rank.r3{background:#fed7aa;color:#9a3412;}
+.lb-info{flex:1;min-width:0;}
+.lb-name{font-size:12px;font-weight:600;color:#1e293b;}
+.lb-sub{font-size:10px;color:#94a3b8;}
+.lb-val{font-size:12px;font-weight:700;color:#002060;text-align:right;white-space:nowrap;}
+.tc-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f1f5f9;}
+.tc-row:last-child{border:none;}
+.tc-name{font-size:12px;font-weight:500;color:#1e293b;}
+.tc-sub{font-size:10px;color:#94a3b8;}
+.tc-val{font-size:12px;font-weight:600;color:#002060;}
+.cb-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;}
+.recent-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;}
+.recent-row:last-child{border:none;}
+.recent-info{flex:1;min-width:0;}
+.recent-no{font-size:11px;font-weight:600;color:#1e293b;}
+.recent-meta{font-size:10px;color:#94a3b8;}
+.recent-val{font-size:12px;font-weight:600;color:#002060;white-space:nowrap;}
+
+/* RESPONSIVE - MOBILE */
+@media (max-width: 768px){
+  body{font-size:12px;}
+  nav{padding:0 .5rem;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;}
+  nav::-webkit-scrollbar{display:none;}
+  .nlogo{margin-right:.5rem;font-size:12px;padding:.5rem .3rem;}
+  .nlogo em{width:22px;height:22px;font-size:10px;}
+  .ntab{padding:.55rem .6rem;font-size:11px;flex-shrink:0;}
+  .nright{margin-left:.5rem;flex-shrink:0;}
+  .user-info{display:none;}
+  .page{padding:.75rem .5rem 1.5rem;max-width:100%;}
+  .ptabs{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .card{padding:.8rem .85rem;border-radius:10px;}
+  .g2,.g3,.g4{grid-template-columns:1fr;gap:8px;}
+  .dash-grid{grid-template-columns:1fr;}
+  .db-greet{font-size:15px;}
+  .bar-label{width:65px;font-size:10px;}
+  .fld input,.fld select,.fld textarea{font-size:14px;padding:8px 10px;}
+  .bp,.bs{font-size:13px;padding:9px 14px;width:100%;justify-content:center;}
+  .abar{flex-direction:column;}
+  .abar .bp,.abar .bs{width:100%;}
+  .itbl{font-size:11px;}
+  .itbl th,.itbl td{padding:4px 3px;}
+  .tblwrap{max-height:360px;}
+  .sg{grid-template-columns:repeat(2,1fr);gap:6px;}
+  .sc{padding:.55rem .6rem;}
+  .sn{font-size:16px;}
+  .pl-bar{flex-direction:column;align-items:stretch;}
+  .pl-bar input[type=text],.pl-bar select{width:100%;}
+  .pills{overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;padding-bottom:4px;}
+  .pill{flex-shrink:0;}
+  .prrow{flex-direction:column;align-items:stretch;}
+  .prrow input{width:100%;}
+  .modal{width:96vw;max-height:92vh;}
+  .modal-bd{padding:.75rem;}
+  .dtabs{overflow-x:auto;}
+  .filter-bar{flex-direction:column;align-items:stretch;}
+  .filter-bar input,.filter-bar select{width:100%;}
+  .type-toggle{flex-direction:column;}
+  .type-btn{width:100%;text-align:center;}
+  .dbi{flex-direction:column;align-items:flex-start;gap:8px;}
+  .dbi > div:last-child{width:100%;display:flex;gap:6px;}
+  .dbi > div:last-child .bxs{flex:1;text-align:center;}
+  .piptbl{font-size:10px;}
+  .piptbl th,.piptbl td{padding:4px 5px;}
+  .pltbl{font-size:11px;}
+  .pltbl td{padding:5px 6px;}
+  .ac .acdrop{max-height:160px;}
+  .prev{font-size:9px;}
+  .ptbl{font-size:8.5px;}
+}
+@media (max-width: 480px){
+  .sg{grid-template-columns:repeat(2,1fr);}
+}
 </style>`
 
 let rows = [], ctr = 0, plF = PL_ITEMS.slice(), plPg = 1, plCat = ''
@@ -169,6 +256,7 @@ export async function renderApp(container, user, logout) {
   container.innerHTML = CSS + `
   <nav>
     <div class="nlogo"><em>G</em> GSO Automation</div>
+    <div class="ntab" onclick="nav('dashboard')">📈 Dashboard</div>
     <div class="ntab on" onclick="nav('quotation')">📄 Quotation</div>
     <div class="ntab" onclick="nav('pricelist')">💰 Pricelist</div>
     <div class="ntab" onclick="nav('pipeline')">📊 Pipeline</div>
@@ -178,6 +266,36 @@ export async function renderApp(container, user, logout) {
       <button class="btn-logout" onclick="doLogout()">Keluar</button>
     </div>
   </nav>
+
+  <!-- DASHBOARD -->
+  <div id="p-dashboard" class="page">
+    <div class="db-greet" id="db-greet"></div>
+    <div class="sg" id="dash-stats"></div>
+    <div class="dash-grid">
+      <div class="card">
+        <div class="chd">Pipeline Status</div>
+        <div id="dash-pipeline-chart"></div>
+      </div>
+      <div class="card">
+        <div class="chd">Leaderboard Sales</div>
+        <div id="dash-leaderboard"></div>
+      </div>
+    </div>
+    <div class="dash-grid">
+      <div class="card">
+        <div class="chd">Top Customer (by Total Value)</div>
+        <div id="dash-top-customer"></div>
+      </div>
+      <div class="card">
+        <div class="chd">Customer Database</div>
+        <div id="dash-cust-breakdown"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="chd">Penawaran Terbaru</div>
+      <div id="dash-recent"></div>
+    </div>
+  </div>
 
   <!-- QUOTATION -->
   <div id="p-quotation" class="page on">
@@ -509,7 +627,7 @@ export async function renderApp(container, user, logout) {
   Object.assign(window, {
     nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, delR, delS, uf, us,
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
-    renderPip, updS, expCSV, loadPipeline, loadCustomers,
+    renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
     doPDF, doSaveQuo, doLogout: onLogout,
@@ -522,9 +640,10 @@ function nav(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('on'))
   document.querySelectorAll('nav .ntab').forEach(b => b.classList.remove('on'))
   document.getElementById('p-' + name).classList.add('on')
-  const idx = ['quotation', 'pricelist', 'pipeline', 'database'].indexOf(name)
+  const idx = ['dashboard', 'quotation', 'pricelist', 'pipeline', 'database'].indexOf(name)
   document.querySelectorAll('nav .ntab')[idx].classList.add('on')
   if (name === 'pipeline') renderPip()
+  if (name === 'dashboard') renderDashboard()
   if (name === 'database') { renderCustList(''); renderProdList('') }
 }
 
@@ -840,6 +959,111 @@ function renderPip() {
 
   const ct = document.getElementById('pip-ct')
   if (ct) ct.textContent = filtered.length + ' dari ' + pipeline.length + ' penawaran'
+}
+
+// DASHBOARD
+function renderDashboard() {
+  const greetName = (currentUser?.email || '').split('@')[0]
+  const greetEl = document.getElementById('db-greet')
+  if (greetEl) greetEl.innerHTML = `Halo, <span>${greetName}</span> 👋`
+
+  // Overall stats
+  const totalQuo = pipeline.length
+  const totalValue = pipeline.reduce((s, h) => s + (h.grand_total || 0), 0)
+  const wonValue = pipeline.filter(h => h.status === 'Closed - Won').reduce((s, h) => s + (h.grand_total || 0), 0)
+  const wonCount = pipeline.filter(h => h.status === 'Closed - Won').length
+  const winRate = totalQuo ? Math.round((wonCount / totalQuo) * 100) : 0
+
+  const sg = document.getElementById('dash-stats')
+  if (sg) sg.innerHTML = `
+    <div class="sc"><div class="sn">${totalQuo}</div><div class="sl">Total Quotation</div></div>
+    <div class="sc"><div class="sn">Rp ${(totalValue / 1e9).toFixed(2)}M</div><div class="sl">Total Pipeline Value</div><div class="sv">dalam Miliar</div></div>
+    <div class="sc"><div class="sn">Rp ${(wonValue / 1e9).toFixed(2)}M</div><div class="sl">Closed Won Value</div></div>
+    <div class="sc"><div class="sn">${winRate}%</div><div class="sl">Win Rate</div></div>
+    <div class="sc"><div class="sn">${customers.length}</div><div class="sl">Total Customer</div></div>
+  `
+
+  // Pipeline status chart
+  const statuses = ['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost']
+  const statusColors = { 'Open': '#3b82f6', 'Nego': '#f59e0b', 'On Hold': '#94a3b8', 'Closed - Won': '#22c55e', 'Closed - Lost': '#ef4444' }
+  const statusCounts = {}
+  statuses.forEach(s => statusCounts[s] = pipeline.filter(h => h.status === s).length)
+  const maxCount = Math.max(...Object.values(statusCounts), 1)
+
+  const chartEl = document.getElementById('dash-pipeline-chart')
+  if (chartEl) chartEl.innerHTML = statuses.map(s => {
+    const n = statusCounts[s]
+    const pct = Math.max((n / maxCount) * 100, n > 0 ? 8 : 0)
+    return `<div class="bar-row">
+      <div class="bar-label">${s}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${statusColors[s]};">${n > 0 ? n : ''}</div></div>
+      <div class="bar-val">${n}</div>
+    </div>`
+  }).join('')
+
+  // Leaderboard by sales
+  const salesMap = {}
+  pipeline.forEach(h => {
+    const name = h.profiles?.name || h.sales_name || 'Unknown'
+    if (!salesMap[name]) salesMap[name] = { count: 0, value: 0, won: 0 }
+    salesMap[name].count++
+    salesMap[name].value += (h.grand_total || 0)
+    if (h.status === 'Closed - Won') salesMap[name].won++
+  })
+  const leaderboard = Object.entries(salesMap).sort((a, b) => b[1].value - a[1].value).slice(0, 8)
+
+  const lbEl = document.getElementById('dash-leaderboard')
+  if (lbEl) lbEl.innerHTML = leaderboard.length ? leaderboard.map(([name, d], i) => {
+    const rankClass = i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : ''
+    return `<div class="lb-row">
+      <div class="lb-rank ${rankClass}">${i + 1}</div>
+      <div class="lb-info"><div class="lb-name">${name}</div><div class="lb-sub">${d.count} quotation · ${d.won} won</div></div>
+      <div class="lb-val">Rp ${(d.value / 1e6).toFixed(0)}M</div>
+    </div>`
+  }).join('') : `<div class="empty">Belum ada data quotation.</div>`
+
+  // Top customers by value
+  const custMap = {}
+  pipeline.forEach(h => {
+    const name = h.customer_snapshot?.company || 'Unknown'
+    if (!custMap[name]) custMap[name] = { count: 0, value: 0 }
+    custMap[name].count++
+    custMap[name].value += (h.grand_total || 0)
+  })
+  const topCust = Object.entries(custMap).sort((a, b) => b[1].value - a[1].value).slice(0, 6)
+
+  const tcEl = document.getElementById('dash-top-customer')
+  if (tcEl) tcEl.innerHTML = topCust.length ? topCust.map(([name, d]) => `
+    <div class="tc-row">
+      <div><div class="tc-name">${name}</div><div class="tc-sub">${d.count} quotation</div></div>
+      <div class="tc-val">Rp ${(d.value / 1e6).toFixed(0)}M</div>
+    </div>`).join('') : `<div class="empty">Belum ada data.</div>`
+
+  // Customer database breakdown
+  const ptCount = customers.filter(c => c.customer_type !== 'End User').length
+  const euCount = customers.filter(c => c.customer_type === 'End User').length
+  const cbEl = document.getElementById('dash-cust-breakdown')
+  if (cbEl) cbEl.innerHTML = `
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;"><span class="badge badge-pt">PT</span> Perusahaan</span><span style="font-weight:600;color:#002060;">${ptCount}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;"><span class="badge badge-eu">End User</span> Individu</span><span style="font-weight:600;color:#002060;">${euCount}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total Customer</span><span style="font-weight:700;color:#002060;">${customers.length}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Produk Tersimpan</span><span style="font-weight:700;color:#002060;">${products.length}</span></div>
+  `
+
+  // Recent quotations
+  const recent = pipeline.slice(0, 8)
+  const recEl = document.getElementById('dash-recent')
+  const statusBadgeClass = { 'Open': 'bopen', 'Nego': 'bnego', 'On Hold': 'bhold', 'Closed - Won': 'bwon', 'Closed - Lost': 'blost' }
+  if (recEl) recEl.innerHTML = recent.length ? recent.map(h => {
+    const salesName = h.profiles?.name || h.sales_name || '-'
+    return `<div class="recent-row">
+      <div class="recent-info">
+        <div class="recent-no">${h.qo_number || '-'} <span class="${statusBadgeClass[h.status] || 'bopen'}">${h.status || 'Open'}</span></div>
+        <div class="recent-meta">${h.customer_snapshot?.company || '-'} · ${salesName} · ${fmtD(h.date)}</div>
+      </div>
+      <div class="recent-val">${h.grand_total ? fmt(h.grand_total) : '-'}</div>
+    </div>`
+  }).join('') : `<div class="empty">Belum ada penawaran.</div>`
 }
 
 async function updS(id, val) {
