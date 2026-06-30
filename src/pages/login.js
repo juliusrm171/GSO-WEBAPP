@@ -1,4 +1,4 @@
-import { signIn, signUp, resetPassword, updatePassword, signOut } from '../lib/supabase.js'
+import { signIn, resetPassword, updatePassword, signOut } from '../lib/supabase.js'
 
 export function renderLogin(container, onSuccess) {
   container.innerHTML = `
@@ -35,10 +35,6 @@ export function renderLogin(container, onSuccess) {
         <h1>GSO Quotation App</h1>
         <p>PT Global Sahabat Otomasi</p>
       </div>
-      <div class="auth-tabs" id="auth-tabs">
-        <div class="auth-tab on" id="tab-login" onclick="switchTab('login')">Masuk</div>
-        <div class="auth-tab" id="tab-register" onclick="switchTab('register')">Daftar</div>
-      </div>
       <div id="auth-err" class="auth-err"></div>
       <div id="auth-ok" class="auth-ok"></div>
 
@@ -47,13 +43,6 @@ export function renderLogin(container, onSuccess) {
         <div class="fld"><label>Password</label><input type="password" id="l-pass" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()"></div>
         <div class="auth-forgot"><a onclick="switchTab('forgot')">Lupa password?</a></div>
         <button class="btn-submit" onclick="doLogin()" id="btn-login">Masuk</button>
-      </div>
-
-      <div id="form-register" style="display:none;">
-        <div class="fld"><label>Nama</label><input type="text" id="r-name" placeholder="Julius Ricky Mayco"></div>
-        <div class="fld"><label>Email</label><input type="email" id="r-email" placeholder="nama@gso.co.id"></div>
-        <div class="fld"><label>Password</label><input type="password" id="r-pass" placeholder="Min. 6 karakter"></div>
-        <button class="btn-submit" onclick="doRegister()" id="btn-reg">Daftar</button>
       </div>
 
       <div id="form-forgot" style="display:none;">
@@ -74,12 +63,8 @@ export function renderLogin(container, onSuccess) {
 
   window.switchTab = (tab) => {
     document.getElementById('form-login').style.display = tab === 'login' ? '' : 'none'
-    document.getElementById('form-register').style.display = tab === 'register' ? '' : 'none'
     document.getElementById('form-forgot').style.display = tab === 'forgot' ? '' : 'none'
     document.getElementById('form-newpass').style.display = 'none'
-    document.getElementById('auth-tabs').style.display = (tab === 'login' || tab === 'register') ? '' : 'none'
-    document.getElementById('tab-login').classList.toggle('on', tab === 'login')
-    document.getElementById('tab-register').classList.toggle('on', tab === 'register')
     document.getElementById('auth-err').style.display = 'none'
     document.getElementById('auth-ok').style.display = 'none'
   }
@@ -110,24 +95,6 @@ export function renderLogin(container, onSuccess) {
     }
   }
 
-  window.doRegister = async () => {
-    const name = document.getElementById('r-name').value.trim()
-    const email = document.getElementById('r-email').value.trim()
-    const pass = document.getElementById('r-pass').value
-    if (!name || !email || !pass) return showErr('Semua field wajib diisi')
-    if (pass.length < 6) return showErr('Password minimal 6 karakter')
-    const btn = document.getElementById('btn-reg')
-    btn.disabled = true; btn.textContent = 'Mendaftar...'
-    try {
-      await signUp(email, pass, name)
-      showOk('Akun berhasil dibuat! Cek email untuk verifikasi, lalu masuk.')
-      window.switchTab('login')
-    } catch (e) {
-      showErr(e.message)
-    }
-    btn.disabled = false; btn.textContent = 'Daftar'
-  }
-
   window.doForgot = async () => {
     const email = document.getElementById('f-email').value.trim()
     if (!email) return showErr('Email wajib diisi')
@@ -155,7 +122,6 @@ export function renderLogin(container, onSuccess) {
       await signOut()
       window.history.replaceState({}, '', window.location.pathname)
       document.getElementById('form-newpass').style.display = 'none'
-      document.getElementById('auth-tabs').style.display = ''
       window.switchTab('login')
       showOk('Password berhasil diubah! Silakan masuk dengan password baru.')
     } catch (e) {
@@ -167,9 +133,7 @@ export function renderLogin(container, onSuccess) {
   // Detect Supabase password-recovery redirect (hash contains type=recovery)
   if (window.location.hash.includes('type=recovery')) {
     document.getElementById('form-login').style.display = 'none'
-    document.getElementById('form-register').style.display = 'none'
     document.getElementById('form-forgot').style.display = 'none'
     document.getElementById('form-newpass').style.display = ''
-    document.getElementById('auth-tabs').style.display = 'none'
   }
 }
