@@ -63,9 +63,10 @@ export function generatePDF(quotation) {
 
   // ===== TO / INFO BOX (independent heights, two columns) =====
   const boxTop = y
-  const leftW = CW * 0.58
-  const rightW = CW * 0.42
-  const rightX = ML + leftW
+  const boxGap = 5
+  const leftW = (CW - boxGap) * 0.58
+  const rightW = (CW - boxGap) * 0.42
+  const rightX = ML + leftW + boxGap
 
   doc.setDrawColor(0, 32, 96)
   doc.setLineWidth(0.3)
