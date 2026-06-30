@@ -863,7 +863,7 @@ let custTypeFilter = 'all'
 
 function toggleAddCust() {
   const el = document.getElementById('add-cust-form')
-  el.style.display = el.style.display === 'none' ? '' : 'none'
+  el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none'
 }
 
 function setNewCustType(type) {
@@ -951,7 +951,7 @@ function renderProdList(q) {
     </div>`).join('') : `<div class="empty">Belum ada produk tersimpan.<br>Klik ★ di Pricelist untuk simpan.</div>`
 }
 
-function toggleAP() { const el = document.getElementById('ap'); el.style.display = el.style.display === 'none' ? '' : 'none' }
+function toggleAP() { const el = document.getElementById('ap'); el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none' }
 
 async function saveProd() {
   const n = document.getElementById('np-n').value; if (!n) { toast('Nama wajib diisi', false); return }
