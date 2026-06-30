@@ -76,6 +76,7 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .pbl-val{font-weight:600;color:#000;}
 .pbl-sep{border-top:1px solid #002060;}
 .pbr-row{display:flex;align-items:center;padding:5px 8px;font-size:9.5px;border-bottom:1px solid #002060;flex:1;}
+.pbr-gap-after{padding-bottom:14px;}
 .pbr-row:last-child{border-bottom:none;}
 .pbr-lbl{color:#1e293b;min-width:75px;flex-shrink:0;}
 .pbr-val{font-weight:600;color:#000;}
@@ -85,10 +86,10 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .prev-tagline{text-align:center;margin-top:18px;}
 .pt-name{font-weight:700;font-style:italic;color:#002060;font-size:11px;}
 .pt-slogan{font-weight:700;font-style:italic;color:#dc2626;font-size:11px;}
-.ptbl{width:100%;border-collapse:collapse;font-size:9.5px;margin-bottom:8px;}
-.ptbl th{background:#002060;color:#fff;padding:5px 6px;text-align:left;border:1px solid rgba(255,255,255,.25);}
+.ptbl{width:100%;border-collapse:collapse;font-size:9.5px;margin-bottom:8px;border:1px solid #002060;}
+.ptbl th{background:#002060;color:#fff;padding:5px 6px;text-align:left;border:1px solid rgba(255,255,255,.3);}
 .ptbl th.r{text-align:right;}
-.ptbl td{padding:4px 6px;border:1px solid #ccc;}
+.ptbl td{padding:5px 6px;border:1px solid #94a3b8;min-height:18px;}
 .ptbl td.r{text-align:right;}
 .ptbl tr.grp td{font-weight:600;background:#f0f3f8;text-align:center;}
 .ptbl tr.sub td{color:#666;background:#fafafa;}
@@ -445,7 +446,7 @@ export async function renderApp(container, user, logout) {
               <div class="pbr-row"><span class="pbr-lbl">Quotation No.</span><span class="pbr-val" id="pv-no"></span></div>
               <div class="pbr-row"><span class="pbr-lbl">Date</span><span class="pbr-val" id="pv-date"></span></div>
               <div class="pbr-row"><span class="pbr-lbl">Sales Name</span><span class="pbr-val" id="pv-sales"></span></div>
-              <div class="pbr-row"><span class="pbr-lbl">Mobile</span><span class="pbr-val" id="pv-mobile"></span></div>
+              <div class="pbr-row pbr-gap-after"><span class="pbr-lbl">Mobile</span><span class="pbr-val" id="pv-mobile"></span></div>
               <div class="pbr-row"><span class="pbr-lbl">Payment</span><span class="pbr-val" id="pv-payment"></span></div>
               <div class="pbr-row"><span class="pbr-lbl">Create by</span><span class="pbr-val" id="pv-createby"></span></div>
               <div class="pbr-row"><span class="pbr-lbl">Engineer</span><span class="pbr-val" id="pv-engineer"></span></div>

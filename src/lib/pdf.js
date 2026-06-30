@@ -88,7 +88,8 @@ export function generatePDF(quotation) {
     ['Engineer', info.engineer || '-'],
   ]
   const rightRowH = 5
-  const rightBoxH = infoRows.length * rightRowH
+  const mobileExtraGap = 4
+  const rightBoxH = infoRows.length * rightRowH + mobileExtraGap
 
   const leftFinalH = leftBoxH
   const rightFinalH = rightBoxH
@@ -148,7 +149,8 @@ export function generatePDF(quotation) {
   doc.rect(rightX, boxTop, rightW, rightFinalH)
   doc.setFontSize(7.5)
   infoRows.forEach((row, i) => {
-    const ry = boxTop + rightRowH * i
+    const gapOffset = i >= 4 ? mobileExtraGap : 0
+    const ry = boxTop + rightRowH * i + gapOffset
     if (i > 0) doc.line(rightX, ry, rightX + rightW, ry)
     doc.setFont(undefined, 'normal')
     doc.setTextColor(30, 41, 59)
