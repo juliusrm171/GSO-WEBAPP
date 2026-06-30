@@ -5,7 +5,6 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-// AUTH
 export async function signIn(email, password) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) throw error
@@ -21,9 +20,7 @@ export async function signUp(email, password, name) {
   return data
 }
 
-export async function signOut() {
-  await supabase.auth.signOut()
-}
+export async function signOut() { await supabase.auth.signOut() }
 
 export async function getSession() {
   const { data } = await supabase.auth.getSession()
@@ -32,10 +29,7 @@ export async function getSession() {
 
 // CUSTOMERS
 export async function getCustomers() {
-  const { data, error } = await supabase
-    .from('customers')
-    .select('*')
-    .order('company')
+  const { data, error } = await supabase.from('customers').select('*').order('company')
   if (error) throw error
   return data
 }
@@ -43,21 +37,19 @@ export async function getCustomers() {
 export async function upsertCustomer(customer) {
   const session = await getSession()
   const payload = { ...customer, created_by: session.user.id }
-  const { data, error } = await supabase
-    .from('customers')
-    .upsert(payload)
-    .select()
-    .single()
+  const { data, error } = await supabase.from('customers').upsert(payload).select().single()
   if (error) throw error
   return data
 }
 
+export async function deleteCustomer(id) {
+  const { error } = await supabase.from('customers').delete().eq('id', id)
+  if (error) throw error
+}
+
 // PRODUCTS
 export async function getProducts() {
-  const { data, error } = await supabase
-    .from('products')
-    .select('*')
-    .order('name')
+  const { data, error } = await supabase.from('products').select('*').order('name')
   if (error) throw error
   return data
 }
@@ -65,11 +57,7 @@ export async function getProducts() {
 export async function upsertProduct(product) {
   const session = await getSession()
   const payload = { ...product, created_by: session.user.id }
-  const { data, error } = await supabase
-    .from('products')
-    .upsert(payload)
-    .select()
-    .single()
+  const { data, error } = await supabase.from('products').upsert(payload).select().single()
   if (error) throw error
   return data
 }
@@ -92,26 +80,19 @@ export async function getQuotations() {
 export async function saveQuotation(q) {
   const session = await getSession()
   const payload = { ...q, created_by: session.user.id }
-  const { data, error } = await supabase
-    .from('quotations')
-    .upsert(payload)
-    .select()
-    .single()
+  const { data, error } = await supabase.from('quotations').upsert(payload).select().single()
   if (error) throw error
   return data
 }
 
 export async function updateQuotationStatus(id, status) {
-  const { error } = await supabase
-    .from('quotations')
-    .update({ status })
-    .eq('id', id)
+  const { error } = await supabase.from('quotations').update({ status }).eq('id', id)
   if (error) throw error
 }
 
 // PROFILES
 export async function getProfiles() {
-  const { data, error } = await supabase.from('profiles').select('*')
+  const { data, error } = await supabase.from('profiles').select('*').order('name')
   if (error) throw error
   return data
 }

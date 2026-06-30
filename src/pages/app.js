@@ -1,9 +1,8 @@
-import { getCustomers, upsertCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, getSession } from '../lib/supabase.js'
 import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
-const CSS = `
-<style>
+const CSS = `<style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',system-ui,sans-serif;background:#f0f3f8;color:#1e293b;font-size:13px;}
 nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:sticky;top:0;z-index:50;box-shadow:0 2px 8px rgba(0,32,96,.3);}
@@ -87,8 +86,10 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .pltbl td{padding:6px 9px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
 .pltbl tr:hover td{background:#f8faff;}
 .badge{display:inline-block;padding:1px 7px;border-radius:8px;font-size:10px;background:#dbeafe;color:#1e40af;}
+.badge-pt{background:#dbeafe;color:#1e40af;}
+.badge-eu{background:#fce7f3;color:#9d174d;}
 .pc{text-align:right;font-weight:600;color:#002060;white-space:nowrap;}
-.tblwrap{overflow-x:auto;max-height:400px;overflow-y:auto;border-radius:8px;border:1px solid #e2e8f0;}
+.tblwrap{overflow-x:auto;max-height:420px;overflow-y:auto;border-radius:8px;border:1px solid #e2e8f0;}
 .pg{display:flex;gap:5px;margin-top:.65rem;justify-content:center;align-items:center;font-size:12px;}
 .pg button{padding:4px 12px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;font-size:11px;}
 .pg button:hover{background:#f8fafc;}
@@ -123,17 +124,28 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .modal-bd{padding:1rem;overflow-y:auto;flex:1;}
 .prrow{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:.65rem;}
 .prrow input{width:125px;padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;}
+.dtabs{display:flex;gap:0;border-bottom:1px solid #e2e8f0;margin-bottom:1rem;}
+.dtab{padding:.5rem 1rem;font-size:12px;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.dtab:hover{color:#1e293b;}
+.dtab.on{color:#002060;border-bottom-color:#002060;font-weight:500;}
+.filter-bar{display:flex;gap:7px;margin-bottom:.75rem;flex-wrap:wrap;align-items:center;}
+.filter-bar input{flex:1;padding:7px 10px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;}
+.filter-bar select{padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;}
+.add-form{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem;margin-bottom:1rem;display:none;}
+.type-toggle{display:flex;gap:6px;margin-bottom:.75rem;}
+.type-btn{padding:6px 14px;border:1px solid #e2e8f0;border-radius:20px;font-size:12px;cursor:pointer;background:#fff;color:#64748b;}
+.type-btn.on{background:#002060;color:#fff;border-color:#002060;}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes spin{to{transform:rotate(360deg)}}
 .empty{text-align:center;padding:2rem;color:#94a3b8;font-size:12px;}
-.prrow input:focus{outline:none;border-color:#002060;}
+.my-badge{background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:6px;font-size:10px;font-weight:500;margin-left:4px;}
 </style>`
 
 let rows = [], ctr = 0, plF = PL_ITEMS.slice(), plPg = 1, plCat = ''
 let mF = PL_ITEMS.slice(), mPg = 1
-let customers = [], products = [], pipeline = []
+let customers = [], products = [], pipeline = [], profiles = []
 let currentUser = null, onLogout = null
-let loading = { customers: false, products: false, pipeline: false }
+let dbTab = 'customer', custType = 'all', pipFilter = 'all'
 const PER = 40
 
 function fmt(n) { return 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') }
@@ -167,6 +179,7 @@ export async function renderApp(container, user, logout) {
     </div>
   </nav>
 
+  <!-- QUOTATION -->
   <div id="p-quotation" class="page on">
     <div class="ptabs">
       <div class="ptab on" id="qt-info" onclick="qt('info')">Info</div>
@@ -181,7 +194,7 @@ export async function renderApp(container, user, logout) {
           <div class="fld"><label>Price Valid Until</label><input id="f-valid" type="date"></div>
         </div>
         <div class="g4">
-          <div class="fld"><label>Sales Name</label><input id="f-sales" value="${user.email.split('@')[0]}"></div>
+          <div class="fld"><label>Sales Name</label><input id="f-sales"></div>
           <div class="fld"><label>Mobile</label><input id="f-mobile" value="081212457537"></div>
           <div class="fld"><label>Payment Terms</label><input id="f-pay" value="50% DP 50% AFTER INVOICE"></div>
           <div class="fld"><label>Delivery Terms</label><input id="f-del" value="3 week DDP"></div>
@@ -190,8 +203,8 @@ export async function renderApp(container, user, logout) {
       <div class="card"><div class="chd">Customer</div>
         <div class="g2" style="margin-bottom:9px;">
           <div class="fld ac">
-            <label>Nama Perusahaan</label>
-            <input id="f-co" placeholder="Ketik untuk cari atau tambah baru..." oninput="acSrch(this.value)" autocomplete="off">
+            <label>Nama Perusahaan / Customer</label>
+            <input id="f-co" placeholder="Ketik untuk cari dari database..." oninput="acSrch(this.value)" autocomplete="off">
             <div class="acdrop" id="acdrop"></div>
           </div>
           <div class="fld"><label>Alamat</label><textarea id="f-addr" placeholder="Jl. alamat lengkap..."></textarea></div>
@@ -213,9 +226,7 @@ export async function renderApp(container, user, logout) {
           <textarea id="f-notes">PO to: order@gso.co.id\nDelivery Terms: 3 week DDP Cikarang, Bekasi\nTerms of Payment: 50% DP 50% AFTER INVOICE\nPembayaran: Rek Mandiri 1200010055494 an PT.Global Sahabat Otomasi</textarea>
         </div>
       </div>
-      <div class="abar">
-        <button class="bp" onclick="qt('items')">Lanjut ke Item →</button>
-      </div>
+      <div class="abar"><button class="bp" onclick="qt('items')">Lanjut ke Item →</button></div>
     </div>
     <div id="qp-items" style="display:none;">
       <div class="card">
@@ -283,6 +294,7 @@ export async function renderApp(container, user, logout) {
     </div>
   </div>
 
+  <!-- PRICELIST -->
   <div id="p-pricelist" class="page">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.65rem;">
@@ -322,6 +334,7 @@ export async function renderApp(container, user, logout) {
     </div>
   </div>
 
+  <!-- PIPELINE -->
   <div id="p-pipeline" class="page">
     <div class="sg" id="sg"></div>
     <div class="card">
@@ -332,16 +345,20 @@ export async function renderApp(container, user, logout) {
           <option>Open</option><option>Nego</option><option>On Hold</option>
           <option>Closed - Won</option><option>Closed - Lost</option>
         </select>
+        <select id="pip-sales" style="padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" onchange="renderPip()">
+          <option value="all">Semua Sales</option>
+          <option value="me">Punya Saya</option>
+        </select>
         <button class="bs" style="padding:7px 11px;font-size:11px;" onclick="expCSV()">⬇ CSV</button>
         <button class="bs" style="padding:7px 11px;font-size:11px;" onclick="loadPipeline()">↻ Refresh</button>
       </div>
       <div class="tblwrap"><table class="piptbl">
         <thead><tr>
           <th>QO No.</th><th>Tanggal</th><th>Sales</th>
-          <th style="min-width:140px;">Customer</th>
-          <th style="min-width:140px;">Deskripsi</th>
-          <th style="width:115px;">Grand Total</th>
-          <th style="width:120px;">Status</th>
+          <th style="min-width:130px;">Customer</th>
+          <th style="min-width:130px;">Deskripsi</th>
+          <th style="width:110px;">Grand Total</th>
+          <th style="width:115px;">Status</th>
         </tr></thead>
         <tbody id="pip-bd"></tbody>
       </table></div>
@@ -349,25 +366,72 @@ export async function renderApp(container, user, logout) {
     </div>
   </div>
 
+  <!-- DATABASE -->
   <div id="p-database" class="page">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.9rem;">
+    <div class="dtabs">
+      <div class="dtab on" id="dt-customer" onclick="switchDbTab('customer')">👥 Customer</div>
+      <div class="dtab" id="dt-product" onclick="switchDbTab('product')">📦 Produk Tersimpan</div>
+    </div>
+
+    <!-- Customer tab -->
+    <div id="db-customer-panel">
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;">
-          <div class="chd" style="margin:0;">Customer (<span id="cc">0</span>)</div>
-          <div style="display:flex;gap:5px;">
-            <button class="bxs" onclick="doSaveCust()">+ Simpan dari form</button>
-            <button class="bs" style="padding:3px 9px;font-size:11px;" onclick="loadCustomers()">↻</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+          <div style="font-size:14px;font-weight:500;">Daftar Customer (<span id="cc">0</span>)</div>
+          <button class="bxs" onclick="toggleAddCust()">+ Tambah Customer</button>
+        </div>
+
+        <!-- Add customer form -->
+        <div class="add-form" id="add-cust-form">
+          <div style="font-size:12px;font-weight:500;margin-bottom:.65rem;color:#002060;">Tambah Customer Baru</div>
+          <div style="margin-bottom:.65rem;">
+            <div style="font-size:11px;color:#64748b;margin-bottom:5px;font-weight:500;">Tipe Customer</div>
+            <div class="type-toggle">
+              <button class="type-btn on" id="type-pt" onclick="setNewCustType('PT')">🏭 PT / Perusahaan</button>
+              <button class="type-btn" id="type-eu" onclick="setNewCustType('End User')">👤 End User</button>
+            </div>
+          </div>
+          <div class="g2" style="margin-bottom:8px;">
+            <div class="fld"><label>Nama Perusahaan / Nama</label><input id="nc-name" placeholder="PT. Nama Perusahaan / Pak Budi"></div>
+            <div class="fld"><label>Kontak Person</label><input id="nc-contact" placeholder="Pak Budi"></div>
+          </div>
+          <div class="g3" style="margin-bottom:8px;">
+            <div class="fld"><label>Telp / Mobile</label><input id="nc-tel" placeholder="+62 812..."></div>
+            <div class="fld"><label>Email</label><input id="nc-email" placeholder="email@perusahaan.com"></div>
+            <div class="fld"><label>Industri / Keterangan</label><input id="nc-industry" placeholder="Farmasi, Food & Bev, dll"></div>
+          </div>
+          <div class="fld" style="margin-bottom:8px;">
+            <label>Alamat</label>
+            <textarea id="nc-addr" placeholder="Jl. alamat lengkap..." style="min-height:44px;"></textarea>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="bp" style="padding:6px 12px;font-size:11px;" id="btn-save-cust" onclick="saveNewCust()">Simpan</button>
+            <button class="bs" style="padding:6px 12px;font-size:11px;" onclick="toggleAddCust()">Batal</button>
           </div>
         </div>
-        <input placeholder="Cari customer..." style="width:100%;padding:6px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;margin-bottom:7px;" oninput="renderC(this.value)">
-        <div id="db-c" style="max-height:340px;overflow-y:auto;"></div>
-      </div>
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;">
-          <div class="chd" style="margin:0;">Produk Tersimpan (<span id="pc">0</span>)</div>
-          <button class="bxs" onclick="toggleAP()">+ Tambah</button>
+
+        <!-- Filter bar -->
+        <div class="filter-bar">
+          <input placeholder="Cari nama, kontak, industri..." oninput="renderCustList(this.value)">
+          <select onchange="setCustTypeFilter(this.value)">
+            <option value="all">Semua Tipe</option>
+            <option value="PT">PT / Perusahaan</option>
+            <option value="End User">End User</option>
+          </select>
+          <button class="bs" style="padding:6px 10px;font-size:11px;" onclick="loadCustomers()">↻ Refresh</button>
         </div>
-        <div id="ap" style="display:none;padding:9px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:7px;">
+        <div id="db-cust-list"></div>
+      </div>
+    </div>
+
+    <!-- Product tab -->
+    <div id="db-product-panel" style="display:none;">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+          <div style="font-size:14px;font-weight:500;">Produk Tersimpan (<span id="pc">0</span>)</div>
+          <button class="bxs" onclick="toggleAP()">+ Tambah Manual</button>
+        </div>
+        <div id="ap" style="display:none;padding:9px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">
           <div class="g2" style="margin-bottom:7px;">
             <div class="fld"><label>Nama</label><input id="np-n"></div>
             <div class="fld"><label>Part No.</label><input id="np-p"></div>
@@ -382,13 +446,13 @@ export async function renderApp(container, user, logout) {
             <button class="bs" style="padding:5px 10px;font-size:11px;" onclick="toggleAP()">Batal</button>
           </div>
         </div>
-        <input placeholder="Cari produk..." style="width:100%;padding:6px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;margin-bottom:7px;" oninput="renderP(this.value)">
-        <div id="db-p" style="max-height:340px;overflow-y:auto;"></div>
+        <input placeholder="Cari produk..." style="width:100%;padding:6px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;margin-bottom:8px;" oninput="renderProdList(this.value)">
+        <div id="db-prod-list" style="max-height:400px;overflow-y:auto;"></div>
       </div>
     </div>
   </div>
 
-  <!-- MODAL -->
+  <!-- MODAL PRICELIST -->
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal">
       <div class="modal-hd">
@@ -421,73 +485,39 @@ export async function renderApp(container, user, logout) {
 
   <div class="toast" id="gso-toast"></div>`
 
-  // Set dates
+  // Init
   document.getElementById('f-date').value = new Date().toISOString().split('T')[0]
   const vd = new Date(); vd.setDate(vd.getDate() + 30)
   document.getElementById('f-valid').value = vd.toISOString().split('T')[0]
-
-  // Set user label
+  document.getElementById('f-sales').value = user.email.split('@')[0]
   document.getElementById('user-label').textContent = user.email
 
-  // Close modal on overlay click
   document.getElementById('modal-overlay').addEventListener('click', e => {
     if (e.target === document.getElementById('modal-overlay')) closeModal()
   })
-
-  // Close autocomplete on click outside
   document.addEventListener('click', e => {
     if (!e.target.closest('.ac')) document.getElementById('acdrop').style.display = 'none'
   })
 
-  // Init pricelist
   initPills()
   plSearch()
   renderRows()
 
-  // Load cloud data
-  await Promise.all([loadCustomers(), loadProducts(), loadPipeline()])
+  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles()])
 
   // Expose globals
-  window.nav = nav
-  window.qt = qt
-  window.acSrch = acSrch
-  window.selC = selC
-  window.recalc = recalc
-  window.aGrp = aGrp
-  window.aItem = aItem
-  window.aNote = aNote
-  window.delR = delR
-  window.delS = delS
-  window.uf = uf
-  window.us = us
-  window.openModal = openModal
-  window.closeModal = closeModal
-  window.mSearch = mSearch
-  window.mGo = mGo
-  window.mAdd = mAdd
-  window.plSearch = plSearch
-  window.plSetCat = plSetCat
-  window.plGo = plGo
-  window.addFromPL = addFromPL
-  window.saveStarPL = saveStarPL
-  window.renderPip = renderPip
-  window.updS = updS
-  window.expCSV = expCSV
-  window.loadPipeline = loadPipeline
-  window.loadCustomers = loadCustomers
-  window.renderC = renderC
-  window.renderP = renderP
-  window.delCust = delCust
-  window.delProd = delProd
-  window.toggleAP = toggleAP
-  window.saveProd = saveProd
-  window.doPDF = doPDF
-  window.doSaveQuo = doSaveQuo
-  window.doSaveCust = doSaveCust
-  window.doLogout = onLogout
+  Object.assign(window, {
+    nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, delR, delS, uf, us,
+    openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
+    renderPip, updS, expCSV, loadPipeline, loadCustomers,
+    renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
+    doSaveCust, renderProdList, delProd, toggleAP, saveProd,
+    doPDF, doSaveQuo, doLogout: onLogout,
+    switchDbTab
+  })
 }
 
-// ── NAV ──
+// NAV
 function nav(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('on'))
   document.querySelectorAll('nav .ntab').forEach(b => b.classList.remove('on'))
@@ -495,30 +525,44 @@ function nav(name) {
   const idx = ['quotation', 'pricelist', 'pipeline', 'database'].indexOf(name)
   document.querySelectorAll('nav .ntab')[idx].classList.add('on')
   if (name === 'pipeline') renderPip()
-  if (name === 'database') { renderC(''); renderP('') }
+  if (name === 'database') { renderCustList(''); renderProdList('') }
 }
 
 function qt(tab) {
   ['info', 'items', 'prev'].forEach(t => {
     document.getElementById('qp-' + t).style.display = t === tab ? '' : 'none'
-    const b = document.getElementById('qt-' + t)
-    if (b) b.classList.toggle('on', t === tab)
+    document.getElementById('qt-' + t).classList.toggle('on', t === tab)
   })
   if (tab === 'prev') renderPrev()
 }
 
-// ── AUTOCOMPLETE ──
+function switchDbTab(tab) {
+  dbTab = tab
+  document.getElementById('db-customer-panel').style.display = tab === 'customer' ? '' : 'none'
+  document.getElementById('db-product-panel').style.display = tab === 'product' ? '' : 'none'
+  document.getElementById('dt-customer').classList.toggle('on', tab === 'customer')
+  document.getElementById('dt-product').classList.toggle('on', tab === 'product')
+}
+
+// AUTOCOMPLETE
 function acSrch(q) {
   const drop = document.getElementById('acdrop')
   if (!q || q.length < 2) { drop.style.display = 'none'; return }
-  const m = customers.filter(c => c.company.toLowerCase().includes(q.toLowerCase())).slice(0, 8)
+  const m = customers.filter(c => (c.company || '').toLowerCase().includes(q.toLowerCase())).slice(0, 8)
   if (!m.length) { drop.style.display = 'none'; return }
-  drop.innerHTML = m.map(c => `<div class="acit" onclick="selC('${c.id}')"><div>${c.company}</div>${c.contact ? `<div class="acsub">${c.contact}</div>` : ''}</div>`).join('')
+  drop.innerHTML = m.map(c => `<div class="acit" onclick="selC('${c.id}')">
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span class="badge ${c.customer_type === 'End User' ? 'badge-eu' : 'badge-pt'}">${c.customer_type || 'PT'}</span>
+      <span>${c.company}</span>
+    </div>
+    ${c.contact ? `<div class="acsub">${c.contact}</div>` : ''}
+  </div>`).join('')
   drop.style.display = 'block'
 }
+
 function selC(id) {
   const c = customers.find(x => x.id === id); if (!c) return
-  document.getElementById('f-co').value = c.company
+  document.getElementById('f-co').value = c.company || ''
   document.getElementById('f-ct').value = c.contact || ''
   document.getElementById('f-tel').value = c.tel || ''
   document.getElementById('f-em').value = c.email || ''
@@ -526,7 +570,7 @@ function selC(id) {
   document.getElementById('acdrop').style.display = 'none'
 }
 
-// ── ITEMS ──
+// ITEMS
 function aGrp() { rows.push({ id: ++ctr, t: 'g', label: 'ENGINEERING SERVICE' }); renderRows() }
 function aItem(name = '', part = '', qty = 1, unit = 'unit', price = 0, disc = 0) { rows.push({ id: ++ctr, t: 'i', name, part, qty, unit, price, disc, subs: [] }); renderRows(); recalc() }
 function aNote() { rows.push({ id: ++ctr, t: 'n', text: '' }); renderRows() }
@@ -554,7 +598,7 @@ function renderRows() {
       <td style="text-align:right;font-weight:600;padding-right:5px;color:#002060;font-size:11px;" id="rt${r.id}">${fmt(calcR(r))}</td>
       <td><button class="bdel" onclick="delR(${r.id})">✕</button></td>
     </tr>${subs}`
-  }).join('') || `<tr><td colspan="9" class="empty">Belum ada item. Klik "+ Item" atau "Cari dari Pricelist".</td></tr>`
+  }).join('') || `<tr><td colspan="9" class="empty">Belum ada item.</td></tr>`
 }
 
 function recalc() {
@@ -571,7 +615,6 @@ function recalc() {
   rows.filter(r => r.t === 'i').forEach(r => { const el = document.getElementById('rt' + r.id); if (el) el.textContent = fmt(calcR(r)) })
 }
 
-// ── PREVIEW ──
 function renderPrev() {
   const tot = rows.filter(r => r.t === 'i').reduce((s, r) => s + calcR(r), 0)
   const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
@@ -594,9 +637,7 @@ function renderPrev() {
   const n = gv('f-notes'); document.getElementById('pv-ft').innerHTML = n ? '<b>Notes:</b><br>' + n.replace(/\n/g, '<br>') : ''
 }
 
-// ── PDF ──
 function doPDF() {
-  const tot = rows.filter(r => r.t === 'i').reduce((s, r) => s + calcR(r), 0)
   const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
   generatePDF({
     info: { qo_number: gv('f-no'), date: gv('f-date'), valid_until: gv('f-valid'), sales_name: gv('f-sales'), sales_mobile: gv('f-mobile'), payment_terms: gv('f-pay'), delivery_terms: gv('f-del'), notes: gv('f-notes'), vat_pct: vp, discount_pct: dp },
@@ -606,7 +647,6 @@ function doPDF() {
   toast('PDF berhasil didownload!')
 }
 
-// ── CLOUD SAVE ──
 async function doSaveQuo() {
   const btn = document.getElementById('btn-save-quo')
   const tot = rows.filter(r => r.t === 'i').reduce((s, r) => s + calcR(r), 0)
@@ -621,7 +661,7 @@ async function doSaveQuo() {
       payment_terms: gv('f-pay'), delivery_terms: gv('f-del'), notes: gv('f-notes'),
       sales_name: gv('f-sales'), sales_mobile: gv('f-mobile'), engineer: gv('f-eng'), status: 'Open'
     })
-    toast('Quotation tersimpan ke cloud!')
+    toast('Quotation tersimpan ke Pipeline!')
     await loadPipeline()
   } catch (e) { toast('Gagal simpan: ' + e.message, false) }
   btn.disabled = false; btn.textContent = '💾 Simpan ke Pipeline'
@@ -630,19 +670,19 @@ async function doSaveQuo() {
 async function doSaveCust() {
   const co = gv('f-co'); if (!co) { toast('Isi nama perusahaan dulu', false); return }
   try {
-    const c = await upsertCustomer({ company: co, contact: gv('f-ct'), tel: gv('f-tel'), email: gv('f-em'), address: gv('f-addr') })
+    const c = await upsertCustomer({ company: co, contact: gv('f-ct'), tel: gv('f-tel'), email: gv('f-em'), address: gv('f-addr'), customer_type: 'PT' })
     if (!customers.find(x => x.id === c.id)) customers.unshift(c)
-    toast('Customer tersimpan ke cloud!')
-    renderC('')
+    toast('Customer tersimpan!')
+    renderCustList('')
     document.getElementById('cc').textContent = customers.length
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
-// ── LOAD DATA ──
+// LOAD DATA
 async function loadCustomers() {
   try {
     customers = await getCustomers()
-    renderC('')
+    renderCustList('')
     document.getElementById('cc').textContent = customers.length
   } catch (e) { console.error(e) }
 }
@@ -650,19 +690,21 @@ async function loadCustomers() {
 async function loadProducts() {
   try {
     products = await getProducts()
-    renderP('')
+    renderProdList('')
     document.getElementById('pc').textContent = products.length
   } catch (e) { console.error(e) }
 }
 
 async function loadPipeline() {
-  try {
-    pipeline = await getQuotations()
-    renderPip()
-  } catch (e) { console.error(e) }
+  try { pipeline = await getQuotations(); renderPip() }
+  catch (e) { console.error(e) }
 }
 
-// ── PRICELIST ──
+async function loadProfiles() {
+  try { profiles = await getProfiles() } catch (e) { console.error(e) }
+}
+
+// PRICELIST
 function initPills() {
   document.getElementById('pl-pills').innerHTML = '<button class="pill on" onclick="plSetCat(\'\')">Semua</button>' +
     PL_CATS.map((c, i) => `<button class="pill" onclick="plSetCat(${i})">${c}</button>`).join('')
@@ -714,18 +756,18 @@ function renderPL() {
   pg.innerHTML = total <= 1 ? '' : (plPg > 1 ? `<button onclick="plGo(${plPg - 1})">← Prev</button>` : '') + `<span style="color:#94a3b8;">Hal ${plPg} / ${total}</span>` + (plPg < total ? `<button onclick="plGo(${plPg + 1})">Next →</button>` : '')
 }
 function plGo(p) { plPg = p; renderPL() }
-function addFromPL(part, name, price) { aItem(name, part, 1, 'unit', price, 0); nav('quotation'); qt('items'); toast(part + ' ditambahkan ke Quotation!') }
+function addFromPL(part, name, price) { aItem(name, part, 1, 'unit', price, 0); nav('quotation'); qt('items'); toast(part + ' ditambahkan!') }
 async function saveStarPL(part, price, cat) {
   try {
     const p = await upsertProduct({ name: part, part, price, unit: 'unit', category: cat })
     if (!products.find(x => x.id === p.id)) products.unshift(p)
     toast(part + ' disimpan ke database!')
-    renderP('')
+    renderProdList('')
     document.getElementById('pc').textContent = products.length
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
-// ── MODAL ──
+// MODAL
 function openModal() {
   document.getElementById('m-q').value = ''; document.getElementById('m-cat').value = ''
   mF = PL_ITEMS.slice(); mPg = 1; renderM()
@@ -735,7 +777,7 @@ function closeModal() { document.getElementById('modal-overlay').classList.remov
 function mSearch() {
   const q = document.getElementById('m-q').value.toLowerCase().trim()
   const ci = document.getElementById('m-cat').value
-  mF = PL_ITEMS.filter(([name, part, price, catI]) => {
+  mF = PL_ITEMS.filter(([name, part, , catI]) => {
     if (ci !== '' && catI !== parseInt(ci)) return false
     if (!q) return true
     return q.split(/\s+/).every(t => (name + ' ' + part).toLowerCase().includes(t))
@@ -759,75 +801,174 @@ function renderM() {
 function mGo(p) { mPg = p; renderM() }
 function mAdd(part, name, price) { aItem(name, part, 1, 'unit', price, 0); closeModal(); qt('items'); toast(part + ' ditambahkan!') }
 
-// ── PIPELINE ──
+// PIPELINE
 function renderPip() {
   const q = (document.getElementById('pip-q')?.value || '').toLowerCase()
   const f = document.getElementById('pip-f')?.value || ''
-  const filtered = pipeline.filter(h => (!q || ((h.qo_number || '') + (h.customer_snapshot?.company || '') + (h.items?.map(i => i.name).join(' ') || '')).toLowerCase().includes(q)) && (!f || h.status === f))
+  const sf = document.getElementById('pip-sales')?.value || 'all'
+
+  const filtered = pipeline.filter(h => {
+    const matchQ = !q || ((h.qo_number || '') + (h.customer_snapshot?.company || '') + (h.sales_name || '')).toLowerCase().includes(q)
+    const matchF = !f || h.status === f
+    const matchS = sf === 'all' || (sf === 'me' && h.created_by === currentUser?.id)
+    return matchQ && matchF && matchS
+  })
+
   const stats = { Open: 0, Nego: 0, 'On Hold': 0, 'Closed - Won': 0, 'Closed - Lost': 0 }
   const vals = { ...stats }
   pipeline.forEach(h => { if (h.status in stats) { stats[h.status]++; vals[h.status] += (h.grand_total || 0) } })
-  const sg = document.getElementById('sg'); if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">Rp ${((vals[s] || 0) / 1e6).toFixed(0)}M</div></div>`).join('')
+
+  const sg = document.getElementById('sg')
+  if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">Rp ${((vals[s] || 0) / 1e6).toFixed(0)}M</div></div>`).join('')
+
   const bd = document.getElementById('pip-bd'); if (!bd) return
   bd.innerHTML = filtered.map(h => {
     const cust = h.customer_snapshot || {}
-    const desc = (h.items || []).filter(r => r.t === 'i').map(r => r.name).join(', ').slice(0, 55)
+    const desc = (h.items || []).filter(r => r.t === 'i').map(r => r.name).join(', ').slice(0, 50)
     const salesName = h.profiles?.name || h.sales_name || '-'
+    const isMe = h.created_by === currentUser?.id
     return `<tr>
-      <td style="font-weight:600;white-space:nowrap;">${h.qo_number || '-'}</td>
+      <td style="font-weight:600;white-space:nowrap;">${h.qo_number || '-'}${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${h.date ? new Date(h.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
-      <td style="font-size:11px;">${salesName}</td>
+      <td style="font-size:11px;color:#64748b;">${salesName}</td>
       <td>${cust.company || '-'}</td>
-      <td style="color:#64748b;">${desc || '-'}</td>
+      <td style="color:#64748b;font-size:11px;">${desc || '-'}</td>
       <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? 'Rp ' + Math.round(h.grand_total).toLocaleString('id-ID') : '-'}</td>
       <td><select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
     </tr>`
   }).join('') || `<tr><td colspan="7" class="empty">Tidak ada data.</td></tr>`
-  const ct = document.getElementById('pip-ct'); if (ct) ct.textContent = filtered.length + ' dari ' + pipeline.length + ' penawaran'
+
+  const ct = document.getElementById('pip-ct')
+  if (ct) ct.textContent = filtered.length + ' dari ' + pipeline.length + ' penawaran'
 }
+
 async function updS(id, val) {
   try {
     await updateQuotationStatus(id, val)
     const h = pipeline.find(x => x.id === id); if (h) h.status = val
-    renderPip(); toast('Status diupdate: ' + val)
-  } catch (e) { toast('Gagal update: ' + e.message, false) }
+    renderPip(); toast('Status: ' + val)
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
+
 function expCSV() {
   const r = [['QO No.', 'Tanggal', 'Sales', 'Customer', 'Grand Total', 'Status'], ...pipeline.map(h => [h.qo_number, h.date, h.sales_name, h.customer_snapshot?.company, h.grand_total, h.status])]
   const csv = r.map(row => row.map(c => `"${(c || '').toString().replace(/"/g, '""')}"`).join(',')).join('\n')
   const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv); a.download = 'GSO_Pipeline.csv'; a.click()
-  toast('Pipeline diekspor ke CSV!')
+  toast('Pipeline diekspor!')
 }
 
-// ── DATABASE ──
-function renderC(q) {
-  const f = q ? customers.filter(c => c.company.toLowerCase().includes(q.toLowerCase())) : customers
-  document.getElementById('db-c').innerHTML = f.length ? f.map(c => `<div class="dbi"><div><div class="dn">${c.company}</div>${c.contact ? `<div class="dm">${c.contact}</div>` : ''}</div><div style="display:flex;gap:4px;"><button class="bxs" onclick="selC('${c.id}');nav('quotation')">Gunakan</button><button class="bdel" onclick="delCust('${c.id}')">🗑</button></div></div>`).join('') : `<div class="empty">Belum ada customer.</div>`
+// DATABASE - CUSTOMER
+let newCustType = 'PT'
+let custTypeFilter = 'all'
+
+function toggleAddCust() {
+  const el = document.getElementById('add-cust-form')
+  el.style.display = el.style.display === 'none' ? '' : 'none'
 }
-function renderP(q) {
-  const f = q ? products.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : products
-  document.getElementById('db-p').innerHTML = f.length ? f.map(p => `<div class="dbi"><div><div class="dn">${p.name}</div><div class="dm">Rp ${Math.round(p.price || 0).toLocaleString('id-ID')} / ${p.unit || 'unit'}</div></div><div style="display:flex;gap:4px;"><button class="bxs" onclick="aItem('${p.name.replace(/'/g, "\\'")}','${(p.part || '').replace(/'/g, "\\'")}',1,'${p.unit || 'unit'}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button><button class="bdel" onclick="delProd('${p.id}')">🗑</button></div></div>`).join('') : `<div class="empty">Belum ada produk tersimpan.<br>Klik ★ di Pricelist untuk simpan produk favorit.</div>`
+
+function setNewCustType(type) {
+  newCustType = type
+  document.getElementById('type-pt').classList.toggle('on', type === 'PT')
+  document.getElementById('type-eu').classList.toggle('on', type === 'End User')
 }
-async function delCust(id) {
-  customers = customers.filter(x => x.id !== id)
-  renderC(''); document.getElementById('cc').textContent = customers.length
+
+function setCustTypeFilter(val) {
+  custTypeFilter = val
+  renderCustList(document.querySelector('.filter-bar input')?.value || '')
 }
-async function delProd(id) {
+
+async function saveNewCust() {
+  const name = document.getElementById('nc-name').value.trim()
+  if (!name) { toast('Nama wajib diisi', false); return }
+  const btn = document.getElementById('btn-save-cust')
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'
   try {
-    await deleteProduct(id)
-    products = products.filter(x => x.id !== id)
-    renderP(''); document.getElementById('pc').textContent = products.length
-    toast('Produk dihapus')
+    const c = await upsertCustomer({
+      company: name,
+      contact: document.getElementById('nc-contact').value,
+      tel: document.getElementById('nc-tel').value,
+      email: document.getElementById('nc-email').value,
+      address: document.getElementById('nc-addr').value,
+      customer_type: newCustType,
+      industry: document.getElementById('nc-industry').value
+    })
+    customers.unshift(c)
+    toast('Customer tersimpan!')
+    renderCustList('')
+    document.getElementById('cc').textContent = customers.length
+    // Reset form
+    ;['nc-name', 'nc-contact', 'nc-tel', 'nc-email', 'nc-addr', 'nc-industry'].forEach(id => document.getElementById(id).value = '')
+    toggleAddCust()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+  btn.disabled = false; btn.textContent = 'Simpan'
+}
+
+function renderCustList(q) {
+  let f = customers
+  if (q) f = f.filter(c => (c.company || '').toLowerCase().includes(q.toLowerCase()) || (c.contact || '').toLowerCase().includes(q.toLowerCase()))
+  if (custTypeFilter !== 'all') f = f.filter(c => c.customer_type === custTypeFilter)
+
+  const list = document.getElementById('db-cust-list'); if (!list) return
+  list.innerHTML = f.length ? f.map(c => `
+    <div class="dbi">
+      <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="badge ${c.customer_type === 'End User' ? 'badge-eu' : 'badge-pt'}">${c.customer_type || 'PT'}</span>
+          <div class="dn">${c.company || '-'}</div>
+        </div>
+        <div class="dm">${[c.contact, c.tel, c.industry].filter(Boolean).join(' · ') || '—'}</div>
+        ${c.email ? `<div class="dm">${c.email}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:4px;flex-shrink:0;">
+        <button class="bxs" onclick="selC('${c.id}');nav('quotation')">Gunakan</button>
+        <button class="bdel" onclick="delCustDB('${c.id}')">🗑</button>
+      </div>
+    </div>`).join('') : `<div class="empty">Tidak ada customer.</div>`
+}
+
+async function delCustDB(id) {
+  if (!confirm('Hapus customer ini?')) return
+  try {
+    await deleteCustomer(id)
+    customers = customers.filter(x => x.id !== id)
+    renderCustList('')
+    document.getElementById('cc').textContent = customers.length
+    toast('Customer dihapus')
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
+
+// DATABASE - PRODUCT
+function renderProdList(q) {
+  const f = q ? products.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : products
+  const list = document.getElementById('db-prod-list'); if (!list) return
+  list.innerHTML = f.length ? f.map(p => `
+    <div class="dbi">
+      <div><div class="dn">${p.name}</div><div class="dm">Rp ${Math.round(p.price || 0).toLocaleString('id-ID')} / ${p.unit || 'unit'} · ${p.category || ''}</div></div>
+      <div style="display:flex;gap:4px;">
+        <button class="bxs" onclick="aItem('${p.name.replace(/'/g, "\\'")}','${(p.part || '').replace(/'/g, "\\'")}',1,'${p.unit || 'unit'}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button>
+        <button class="bdel" onclick="delProd('${p.id}')">🗑</button>
+      </div>
+    </div>`).join('') : `<div class="empty">Belum ada produk tersimpan.<br>Klik ★ di Pricelist untuk simpan.</div>`
+}
+
 function toggleAP() { const el = document.getElementById('ap'); el.style.display = el.style.display === 'none' ? '' : 'none' }
+
 async function saveProd() {
   const n = document.getElementById('np-n').value; if (!n) { toast('Nama wajib diisi', false); return }
   try {
     const p = await upsertProduct({ name: n, part: document.getElementById('np-p').value, price: +(document.getElementById('np-pr').value || 0), unit: document.getElementById('np-u').value || 'unit', category: document.getElementById('np-c').value })
     if (!products.find(x => x.id === p.id)) products.unshift(p)
-    renderP(''); document.getElementById('pc').textContent = products.length
+    renderProdList(''); document.getElementById('pc').textContent = products.length
     toast('Produk tersimpan!'); toggleAP()
     ;['np-n', 'np-p', 'np-pr'].forEach(id => document.getElementById(id).value = '')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function delProd(id) {
+  try {
+    await deleteProduct(id)
+    products = products.filter(x => x.id !== id)
+    renderProdList(''); document.getElementById('pc').textContent = products.length
+    toast('Produk dihapus')
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
