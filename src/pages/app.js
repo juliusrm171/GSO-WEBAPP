@@ -530,7 +530,6 @@ export async function renderApp(container, user, logout) {
         </select>
         <select id="pip-sales" style="padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" onchange="renderPip()">
           <option value="all">Semua Sales</option>
-          <option value="me">Punya Saya</option>
         </select>
         <button class="bs" style="padding:7px 11px;font-size:11px;" onclick="expCSV()">⬇ CSV</button>
         <button class="bs" style="padding:7px 11px;font-size:11px;" onclick="loadPipeline()">↻ Refresh</button>
@@ -1001,6 +1000,18 @@ function mAdd(part, name, price) { aItem(name, part, 1, 'unit', price, 0); close
 
 // PIPELINE
 function renderPip() {
+  // Populate sales filter dropdown dynamically with unique sales names
+  const salesSelect = document.getElementById('pip-sales')
+  if (salesSelect) {
+    const uniqueSales = [...new Set(pipeline.map(h => h.profiles?.name || h.sales_name).filter(Boolean))].sort()
+    const currentVal = salesSelect.value || 'all'
+    const optsHtml = '<option value="all">Semua Sales</option>' + uniqueSales.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('')
+    if (salesSelect.innerHTML !== optsHtml) {
+      salesSelect.innerHTML = optsHtml
+      salesSelect.value = uniqueSales.includes(currentVal) || currentVal === 'all' ? currentVal : 'all'
+    }
+  }
+
   const q = (document.getElementById('pip-q')?.value || '').toLowerCase()
   const f = document.getElementById('pip-f')?.value || ''
   const sf = document.getElementById('pip-sales')?.value || 'all'
@@ -1008,13 +1019,14 @@ function renderPip() {
   const filtered = pipeline.filter(h => {
     const matchQ = !q || ((h.qo_number || '') + (h.customer_snapshot?.company || '') + (h.sales_name || '')).toLowerCase().includes(q)
     const matchF = !f || h.status === f
-    const matchS = sf === 'all' || (sf === 'me' && h.created_by === currentUser?.id)
+    const salesName = h.profiles?.name || h.sales_name || ''
+    const matchS = sf === 'all' || salesName === sf
     return matchQ && matchF && matchS
   })
 
   const stats = { Open: 0, Nego: 0, 'On Hold': 0, 'Closed - Won': 0, 'Closed - Lost': 0 }
   const vals = { ...stats }
-  pipeline.forEach(h => { if (h.status in stats) { stats[h.status]++; vals[h.status] += (h.grand_total || 0) } })
+  filtered.forEach(h => { if (h.status in stats) { stats[h.status]++; vals[h.status] += (h.grand_total || 0) } })
 
   const sg = document.getElementById('sg')
   if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">Rp ${((vals[s] || 0) / 1e6).toFixed(0)}M</div></div>`).join('')
