@@ -65,7 +65,7 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .prev-bd{padding:6px 18px 18px;}
 .prev-title{text-align:center;font-size:17px;font-weight:700;letter-spacing:.04em;color:#000;margin-bottom:10px;}
 .prev-boxes{display:flex;align-items:flex-start;gap:14px;margin-bottom:10px;}
-.prev-box-left{flex:1.4;border:1px solid #002060;border-right:none;}
+.prev-box-left{flex:1.4;border:1px solid #002060;}
 .prev-box-right{flex:1;border:1px solid #002060;display:flex;flex-direction:column;}
 .pbl-to-section{padding:6px 8px 10px;}
 .pbl-to-lbl{font-size:10px;text-decoration:underline;color:#1e293b;margin-bottom:4px;}
