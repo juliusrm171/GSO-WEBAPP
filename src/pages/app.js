@@ -1109,7 +1109,7 @@ function renderDashboard() {
     return `<div class="lb-row">
       <div class="lb-rank ${rankClass}">${i + 1}</div>
       <div class="lb-info"><div class="lb-name">${name}</div><div class="lb-sub">${d.count} quotation · ${d.won} won</div></div>
-      <div class="lb-val">Rp ${(d.value / 1e6).toFixed(0)}M</div>
+      <div class="lb-val">${fmt(d.value)}</div>
     </div>`
   }).join('') : `<div class="empty">Belum ada data quotation.</div>`
 
@@ -1127,7 +1127,7 @@ function renderDashboard() {
   if (tcEl) tcEl.innerHTML = topCust.length ? topCust.map(([name, d]) => `
     <div class="tc-row">
       <div><div class="tc-name">${name}</div><div class="tc-sub">${d.count} quotation</div></div>
-      <div class="tc-val">Rp ${(d.value / 1e6).toFixed(0)}M</div>
+      <div class="tc-val">${fmt(d.value)}</div>
     </div>`).join('') : `<div class="empty">Belum ada data.</div>`
 
   // Customer database breakdown
