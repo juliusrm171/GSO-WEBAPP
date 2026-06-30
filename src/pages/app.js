@@ -64,13 +64,16 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .prev-hd2-name{font-size:14px;font-weight:700;color:#000;margin-bottom:2px;}
 .prev-bd{padding:6px 18px 18px;}
 .prev-title{text-align:center;font-size:17px;font-weight:700;letter-spacing:.04em;color:#000;margin-bottom:10px;}
-.prev-boxes{display:grid;grid-template-columns:1.4fr 1fr;border:1px solid #002060;margin-bottom:10px;}
-.prev-box-left{border-right:1px solid #002060;}
-.prev-box-right{display:flex;flex-direction:column;}
+.prev-boxes{display:flex;align-items:flex-start;gap:0;margin-bottom:10px;}
+.prev-box-left{flex:1.4;border:1px solid #002060;border-right:none;}
+.prev-box-right{flex:1;border:1px solid #002060;display:flex;flex-direction:column;}
+.pbl-to-section{padding:6px 8px 10px;}
+.pbl-to-lbl{font-size:10px;text-decoration:underline;color:#1e293b;margin-bottom:4px;}
+.pbl-company{font-weight:700;font-size:11px;color:#000;margin-bottom:3px;}
+.pbl-addr{font-size:9.5px;color:#333;line-height:1.5;min-height:14px;}
 .pbl-row{display:flex;padding:5px 8px;font-size:10px;gap:6px;}
-.pbl-lbl{color:#1e293b;flex-shrink:0;min-width:75px;}
+.pbl-lbl{color:#1e293b;flex-shrink:0;min-width:75px;text-decoration:underline;}
 .pbl-val{font-weight:600;color:#000;}
-.pbl-addr{font-weight:400;color:#333;}
 .pbl-sep{border-top:1px solid #002060;}
 .pbr-row{display:flex;align-items:center;padding:5px 8px;font-size:9.5px;border-bottom:1px solid #002060;flex:1;}
 .pbr-row:last-child{border-bottom:none;}
@@ -83,7 +86,7 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .pt-name{font-weight:700;font-style:italic;color:#002060;font-size:11px;}
 .pt-slogan{font-weight:700;font-style:italic;color:#dc2626;font-size:11px;}
 .ptbl{width:100%;border-collapse:collapse;font-size:9.5px;margin-bottom:8px;}
-.ptbl th{background:#002060;color:#fff;padding:5px 6px;text-align:left;border:1px solid #002060;}
+.ptbl th{background:#002060;color:#fff;padding:5px 6px;text-align:left;border:1px solid rgba(255,255,255,.25);}
 .ptbl th.r{text-align:right;}
 .ptbl td{padding:4px 6px;border:1px solid #ccc;}
 .ptbl td.r{text-align:right;}
@@ -426,8 +429,11 @@ export async function renderApp(container, user, logout) {
           <div class="prev-title">QUOTATION</div>
           <div class="prev-boxes">
             <div class="prev-box-left">
-              <div class="pbl-row"><span class="pbl-lbl">To :</span><span class="pbl-val" id="pv-to"></span></div>
-              <div class="pbl-row" id="pv-addr-row" style="display:none;"><span class="pbl-lbl"></span><span class="pbl-val pbl-addr" id="pv-addr"></span></div>
+              <div class="pbl-to-section">
+                <div class="pbl-to-lbl">To :</div>
+                <div class="pbl-company" id="pv-to"></div>
+                <div class="pbl-addr" id="pv-addr"></div>
+              </div>
               <div class="pbl-sep"></div>
               <div class="pbl-row"><span class="pbl-lbl">Up :</span><span class="pbl-val" id="pv-up"></span></div>
               <div class="pbl-sep"></div>
@@ -441,11 +447,12 @@ export async function renderApp(container, user, logout) {
               <div class="pbr-row"><span class="pbr-lbl">Sales Name</span><span class="pbr-val" id="pv-sales"></span></div>
               <div class="pbr-row"><span class="pbr-lbl">Mobile</span><span class="pbr-val" id="pv-mobile"></span></div>
               <div class="pbr-row"><span class="pbr-lbl">Payment</span><span class="pbr-val" id="pv-payment"></span></div>
+              <div class="pbr-row"><span class="pbr-lbl">Create by</span><span class="pbr-val" id="pv-createby"></span></div>
               <div class="pbr-row"><span class="pbr-lbl">Engineer</span><span class="pbr-val" id="pv-engineer"></span></div>
             </div>
           </div>
           <table class="ptbl"><thead><tr>
-            <th style="width:20px;">No.</th><th style="width:68px;">Part Number</th><th>Description</th>
+            <th style="width:28px;">No.</th><th style="width:75px;">Part Number</th><th>Description</th>
             <th style="width:26px;" class="r">Qty</th>
             <th style="width:82px;" class="r">Unit Price</th><th style="width:34px;" class="r">Disc</th>
             <th style="width:82px;" class="r">Price</th>
@@ -800,9 +807,7 @@ function renderPrev() {
   const da = tot * dp / 100, sub = tot - da, vat = sub * vp / 100, grand = sub + vat
 
   document.getElementById('pv-to').textContent = gv('f-co') || '-'
-  const addr = gv('f-addr')
-  const addrRow = document.getElementById('pv-addr-row')
-  if (addr) { addrRow.style.display = ''; document.getElementById('pv-addr').textContent = addr } else { addrRow.style.display = 'none' }
+  document.getElementById('pv-addr').textContent = gv('f-addr') || ''
   document.getElementById('pv-up').textContent = gv('f-ct') || '-'
   document.getElementById('pv-tel').textContent = gv('f-tel') || '-'
   document.getElementById('pv-email').textContent = gv('f-em') || '-'
@@ -812,6 +817,7 @@ function renderPrev() {
   document.getElementById('pv-sales').textContent = gv('f-sales') || ''
   document.getElementById('pv-mobile').textContent = gv('f-mobile') || '-'
   document.getElementById('pv-payment').textContent = gv('f-pay') || '-'
+  document.getElementById('pv-createby').textContent = gv('f-sales') || '-'
   document.getElementById('pv-engineer').textContent = gv('f-eng') || '-'
 
   let nc = 0

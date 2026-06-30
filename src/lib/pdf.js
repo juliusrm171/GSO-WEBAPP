@@ -61,82 +61,108 @@ export function generatePDF(quotation) {
   doc.text('QUOTATION', pw / 2, y, { align: 'center' })
   y += 6
 
-  // ===== TO / INFO BOX (two columns with borders) =====
+  // ===== TO / INFO BOX (independent heights, two columns) =====
   const boxTop = y
   const leftW = CW * 0.58
   const rightW = CW * 0.42
   const rightX = ML + leftW
 
-  // Left box: To / Up / Telp / Fax
   doc.setDrawColor(0, 32, 96)
   doc.setLineWidth(0.3)
   doc.setFontSize(8)
 
-  // Pre-calculate address line wrapping to determine box height
-  const addrLines = customer.address ? doc.splitTextToSize(customer.address, leftW - 16) : []
-  const addrBlockH = addrLines.length * 3.8
-  const toRowH = 6 + addrBlockH
+  // ---- Compute LEFT box height ----
+  const addrLines = customer.address ? doc.splitTextToSize(customer.address, leftW - 6) : []
+  const toSectionH = 5 + 5 + (addrLines.length ? addrLines.length * 3.8 + 1 : 2)
   const subRowH = 5
-  const leftBoxH = toRowH + subRowH * 3
-  const rightBoxH = 30
-  const boxH = Math.max(leftBoxH, rightBoxH)
+  const leftBoxH = toSectionH + subRowH * 3
 
-  doc.rect(ML, boxTop, leftW, boxH)
-  let leftY = boxTop + 4.5
-  doc.setFont(undefined, 'normal')
-  doc.text('To :', ML + 2, leftY)
-  doc.setFont(undefined, 'bold')
-  doc.text(customer.company || '-', ML + 14, leftY)
-  if (addrLines.length) {
-    doc.setFont(undefined, 'normal')
-    doc.text(addrLines, ML + 14, leftY + 4)
-  }
-
-  leftY = boxTop + toRowH
-  doc.line(ML, leftY, ML + leftW, leftY)
-  leftY += 4
-  doc.setFont(undefined, 'normal')
-  doc.text('Up :', ML + 2, leftY)
-  doc.text(customer.contact || '-', ML + 14, leftY)
-
-  leftY = boxTop + toRowH + subRowH
-  doc.line(ML, leftY, ML + leftW, leftY)
-  leftY += 4
-  doc.text('Telp / Mobile:', ML + 2, leftY)
-  doc.text(customer.tel || '-', ML + 30, leftY)
-
-  leftY = boxTop + toRowH + subRowH * 2
-  doc.line(ML, leftY, ML + leftW, leftY)
-  leftY += 4
-  doc.text('Fax / Email :', ML + 2, leftY)
-  doc.text(customer.email || '-', ML + 30, leftY)
-
-  // Right box: Quotation info table
-  doc.rect(rightX, boxTop, rightW, boxH)
+  // ---- Compute RIGHT box height (7 rows now incl. Create by) ----
   const infoRows = [
     ['Quotation No.', info.qo_number || ''],
     ['Date', fmtDate(info.date)],
     ['Sales Name', info.sales_name || ''],
     ['Mobile', info.sales_mobile || ''],
     ['Payment', info.payment_terms || ''],
+    ['Create by', info.sales_name || '-'],
     ['Engineer', info.engineer || '-'],
   ]
-  const rowH = boxH / infoRows.length
+  const rightRowH = 5
+  const rightBoxH = infoRows.length * rightRowH
+
+  const leftFinalH = leftBoxH
+  const rightFinalH = rightBoxH
+
+  // ---- Draw LEFT box ----
+  doc.rect(ML, boxTop, leftW, leftFinalH)
+  let leftY = boxTop + 4
+  doc.setFont(undefined, 'normal')
+  doc.setFontSize(7.5)
+  doc.setTextColor(30, 41, 59)
+  doc.text('To :', ML + 2, leftY)
+  doc.line(ML + 2, leftY + 0.6, ML + 8, leftY + 0.6) // underline "To :"
+  leftY += 4.5
+  doc.setFont(undefined, 'bold')
+  doc.setFontSize(8.5)
+  doc.setTextColor(0)
+  doc.text(customer.company || '-', ML + 2, leftY)
+  leftY += 4
+  if (addrLines.length) {
+    doc.setFont(undefined, 'normal')
+    doc.setFontSize(7.5)
+    doc.setTextColor(50, 50, 50)
+    doc.text(addrLines, ML + 2, leftY)
+    leftY += addrLines.length * 3.8
+  }
+
+  leftY = boxTop + toSectionH
+  doc.line(ML, leftY, ML + leftW, leftY)
+  leftY += 4
+  doc.setFont(undefined, 'normal')
+  doc.setFontSize(7.5)
+  doc.setTextColor(30, 41, 59)
+  doc.text('Up :', ML + 2, leftY)
+  doc.line(ML + 2, leftY + 0.6, ML + 8, leftY + 0.6)
+  doc.setTextColor(0)
+  doc.text(customer.contact || '-', ML + 14, leftY)
+
+  leftY = boxTop + toSectionH + subRowH
+  doc.line(ML, leftY, ML + leftW, leftY)
+  leftY += 4
+  doc.setTextColor(30, 41, 59)
+  doc.text('Telp / Mobile:', ML + 2, leftY)
+  doc.line(ML + 2, leftY + 0.6, ML + 22, leftY + 0.6)
+  doc.setTextColor(0)
+  doc.text(customer.tel || '-', ML + 30, leftY)
+
+  leftY = boxTop + toSectionH + subRowH * 2
+  doc.line(ML, leftY, ML + leftW, leftY)
+  leftY += 4
+  doc.setTextColor(30, 41, 59)
+  doc.text('Fax / Email :', ML + 2, leftY)
+  doc.line(ML + 2, leftY + 0.6, ML + 20, leftY + 0.6)
+  doc.setTextColor(0)
+  doc.text(customer.email || '-', ML + 30, leftY)
+
+  // ---- Draw RIGHT box ----
+  doc.rect(rightX, boxTop, rightW, rightFinalH)
   doc.setFontSize(7.5)
   infoRows.forEach((row, i) => {
-    const ry = boxTop + rowH * i
+    const ry = boxTop + rightRowH * i
     if (i > 0) doc.line(rightX, ry, rightX + rightW, ry)
     doc.setFont(undefined, 'normal')
-    doc.text(row[0], rightX + 2, ry + rowH / 2 + 1.2)
+    doc.setTextColor(30, 41, 59)
+    doc.text(row[0], rightX + 2, ry + rightRowH / 2 + 1.2)
     doc.setFont(undefined, 'bold')
+    doc.setTextColor(0)
     const valX = rightX + rightW * 0.42
     const valLines = doc.splitTextToSize(String(row[1] || '-'), rightW * 0.55)
-    doc.text(valLines, valX, ry + rowH / 2 + 1.2)
+    doc.text(valLines, valX, ry + rightRowH / 2 + 1.2)
   })
   // vertical divider in right box
-  doc.line(rightX + rightW * 0.40, boxTop, rightX + rightW * 0.40, boxTop + boxH)
+  doc.line(rightX + rightW * 0.40, boxTop, rightX + rightW * 0.40, boxTop + rightFinalH)
 
-  y = boxTop + boxH + 5
+  y = boxTop + Math.max(leftFinalH, rightFinalH) + 5
 
   // ===== ITEMS TABLE =====
   let nc = 0
