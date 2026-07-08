@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact } from '../lib/supabase.js'
 import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -279,7 +279,7 @@ const FULL_LOGO_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAlgAAADlCAYAAACPrYleAAAKMWlDQ1BJQ
 
 let rows = [], ctr = 0, plF = PL_ITEMS.slice(), plPg = 1, plCat = ''
 let mF = PL_ITEMS.slice(), mPg = 1
-let customers = [], products = [], pipeline = [], profiles = [], visits = []
+let customers = [], products = [], pipeline = [], profiles = [], visits = [], contacts = []
 let visitTarget = 10
 let currentUser = null, onLogout = null
 let dbTab = 'customer', custType = 'all', pipFilter = 'all'
@@ -379,7 +379,7 @@ export async function renderApp(container, user, logout) {
           <div class="fld"><label>Alamat</label><textarea id="f-addr" placeholder="Jl. alamat lengkap..."></textarea></div>
         </div>
         <div class="g3">
-          <div class="fld"><label>Up (Kontak)</label><input id="f-ct"></div>
+          <div class="fld"><label>Up (Kontak)</label><input id="f-ct" list="f-ct-list" onchange="fCtChanged(this.value)" placeholder="Pilih atau ketik kontak..."><datalist id="f-ct-list"></datalist></div>
           <div class="fld"><label>Telp / Mobile</label><input id="f-tel"></div>
           <div class="fld"><label>Fax / Email</label><input id="f-em"></div>
         </div>
@@ -591,7 +591,7 @@ export async function renderApp(container, user, logout) {
           <input id="v-cust" placeholder="Ketik nama customer..." autocomplete="off" oninput="vCustSearch(this.value)" onfocus="vCustSearch(this.value)">
           <div id="v-cust-drop" class="acdrop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,.08);"></div>
         </div>
-        <div class="fld"><label>Kontak Person</label><input id="v-contact" placeholder="Pak/Bu..."></div>
+        <div class="fld"><label>Kontak Person</label><input id="v-contact" list="v-ct-list" placeholder="Pilih atau ketik kontak..."><datalist id="v-ct-list"></datalist></div>
       </div>
       <div class="g2" style="margin-bottom:8px;">
         <div class="fld"><label>Tujuan Visit</label>
@@ -757,7 +757,7 @@ export async function renderApp(container, user, logout) {
   plSearch()
   renderRows()
 
-  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits()])
+  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts()])
   renderDashboard()
 
   // Expose globals
@@ -766,6 +766,7 @@ export async function renderApp(container, user, logout) {
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
     renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
     renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
+    toggleContacts, saveNewContact, delContactDB, fCtChanged,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
@@ -823,11 +824,28 @@ function acSrch(q) {
 function selC(id) {
   const c = customers.find(x => x.id === id); if (!c) return
   document.getElementById('f-co').value = c.company || ''
-  document.getElementById('f-ct').value = c.contact || ''
   document.getElementById('f-tel').value = c.tel || ''
   document.getElementById('f-em').value = c.email || ''
   document.getElementById('f-addr').value = c.address || ''
   document.getElementById('acdrop').style.display = 'none'
+
+  // Populate Up (contact) options from the company's contact list
+  const kList = contactsOf(c.id)
+  const dl = document.getElementById('f-ct-list')
+  if (dl) dl.innerHTML = kList.map(k => `<option value="${(k.name || '').replace(/"/g, '&quot;')}">${k.role || ''}</option>`).join('')
+  // Default: first contact or legacy contact field
+  document.getElementById('f-ct').value = kList[0]?.name || c.contact || ''
+  // Auto-fill tel from first contact if company tel empty
+  if (!c.tel && kList[0]?.tel) document.getElementById('f-tel').value = kList[0].tel
+}
+
+function fCtChanged(val) {
+  // When user picks a specific contact, auto-fill their tel/email if available
+  const k = contacts.find(x => x.name === val)
+  if (k) {
+    if (k.tel) document.getElementById('f-tel').value = k.tel
+    if (k.email) document.getElementById('f-em').value = k.email
+  }
 }
 
 // ITEMS
@@ -984,6 +1002,73 @@ async function loadVisits() {
   } catch (e) { console.error(e) }
 }
 
+// CUSTOMER CONTACTS
+async function loadContacts() {
+  try { contacts = await getContacts() } catch (e) { console.error(e) }
+}
+
+function contactsOf(customerId) {
+  return contacts.filter(c => c.customer_id === customerId)
+}
+
+let expandedContactCustId = null
+
+function toggleContacts(custId) {
+  expandedContactCustId = expandedContactCustId === custId ? null : custId
+  renderCustList(document.querySelector('.filter-bar input')?.value || '')
+}
+
+function renderContactPanel(c) {
+  const list = contactsOf(c.id)
+  return `
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.8rem .9rem;margin-bottom:5px;">
+      <div style="font-size:11.5px;font-weight:600;color:#002060;margin-bottom:.5rem;">👥 Kontak di ${c.company}</div>
+      ${list.length ? list.map(k => `
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #eef2f7;">
+          <div style="flex:1;">
+            <span style="font-size:12px;font-weight:600;">${k.name}</span>
+            ${k.role ? `<span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 7px;border-radius:6px;margin-left:6px;">${k.role}</span>` : ''}
+            <div style="font-size:10.5px;color:#94a3b8;">${[k.tel, k.email].filter(Boolean).join(' · ') || '—'}</div>
+          </div>
+          <button class="bdel" onclick="delContactDB('${k.id}')">🗑</button>
+        </div>`).join('') : '<div style="font-size:11px;color:#94a3b8;padding:4px 0;">Belum ada kontak.</div>'}
+      <div class="g4" style="margin-top:.6rem;margin-bottom:6px;">
+        <div class="fld"><label>Nama</label><input id="nc-name-${c.id}" placeholder="Pak/Bu..."></div>
+        <div class="fld"><label>Jabatan/Divisi</label><input id="nc-role-${c.id}" placeholder="Engineer, Purchasing, QC..."></div>
+        <div class="fld"><label>Telp</label><input id="nc-tel-${c.id}" placeholder="+62..."></div>
+        <div class="fld"><label>Email</label><input id="nc-email-${c.id}" placeholder="email@..."></div>
+      </div>
+      <button class="bp" style="padding:5px 12px;font-size:11px;" onclick="saveNewContact('${c.id}')">+ Tambah Kontak</button>
+    </div>`
+}
+
+async function saveNewContact(custId) {
+  const name = document.getElementById('nc-name-' + custId)?.value.trim()
+  if (!name) { toast('Nama kontak wajib diisi', false); return }
+  try {
+    const k = await addContact({
+      customer_id: custId,
+      name,
+      role: document.getElementById('nc-role-' + custId)?.value || '',
+      tel: document.getElementById('nc-tel-' + custId)?.value || '',
+      email: document.getElementById('nc-email-' + custId)?.value || ''
+    })
+    contacts.push(k)
+    toast('Kontak ditambahkan!')
+    renderCustList(document.querySelector('.filter-bar input')?.value || '')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function delContactDB(id) {
+  if (!confirm('Hapus kontak ini?')) return
+  try {
+    await deleteContact(id)
+    contacts = contacts.filter(k => k.id !== id)
+    renderCustList(document.querySelector('.filter-bar input')?.value || '')
+    toast('Kontak dihapus')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
 function renderVisits() {
   // Set default date to today
   const dateEl = document.getElementById('v-date')
@@ -1100,7 +1185,10 @@ function vCustPick(id) {
   const c = customers.find(x => x.id === id); if (!c) return
   vSelectedCustId = c.id
   document.getElementById('v-cust').value = c.company || ''
-  if (c.contact) document.getElementById('v-contact').value = c.contact
+  const kList = contactsOf(c.id)
+  const dl = document.getElementById('v-ct-list')
+  if (dl) dl.innerHTML = kList.map(k => `<option value="${(k.name || '').replace(/"/g, '&quot;')}">${k.role || ''}</option>`).join('')
+  document.getElementById('v-contact').value = kList[0]?.name || c.contact || ''
   document.getElementById('v-cust-drop').style.display = 'none'
 }
 
@@ -1471,13 +1559,14 @@ async function saveNewCust() {
 
 function renderCustList(q) {
   let f = customers
-  if (q) f = f.filter(c => (c.company || '').toLowerCase().includes(q.toLowerCase()) || (c.contact || '').toLowerCase().includes(q.toLowerCase()))
+  if (q) f = f.filter(c => (c.company || '').toLowerCase().includes(q.toLowerCase()) || (c.contact || '').toLowerCase().includes(q.toLowerCase()) || contactsOf(c.id).some(k => k.name.toLowerCase().includes(q.toLowerCase())))
   if (custTypeFilter !== 'all') f = f.filter(c => c.customer_type === custTypeFilter)
 
   const list = document.getElementById('db-cust-list'); if (!list) return
   list.innerHTML = f.length ? f.map(c => {
     if (editingCustId === c.id) return renderCustEditRow(c)
-    return `
+    const nContacts = contactsOf(c.id).length
+    const row = `
     <div class="dbi">
       <div style="flex:1;">
         <div style="display:flex;align-items:center;gap:6px;">
@@ -1488,11 +1577,13 @@ function renderCustList(q) {
         ${c.email ? `<div class="dm">${c.email}</div>` : ''}
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0;">
+        <button class="bxs" onclick="toggleContacts('${c.id}')">👥 Kontak${nContacts ? ' (' + nContacts + ')' : ''}</button>
         <button class="bxs" onclick="selC('${c.id}');nav('quotation')">Gunakan</button>
         <button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditCust('${c.id}')">✏️ Edit</button>
         <button class="bdel" onclick="delCustDB('${c.id}')">🗑</button>
       </div>
     </div>`
+    return expandedContactCustId === c.id ? row + renderContactPanel(c) : row
   }).join('') : `<div class="empty">Tidak ada customer.</div>`
 }
 

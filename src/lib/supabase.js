@@ -143,3 +143,23 @@ export async function setSetting(key, value) {
   const { error } = await supabase.from('app_settings').upsert({ key, value: String(value), updated_at: new Date().toISOString() })
   if (error) throw error
 }
+
+// CUSTOMER CONTACTS
+export async function getContacts() {
+  const { data, error } = await supabase.from('customer_contacts').select('*').order('name')
+  if (error) throw error
+  return data
+}
+
+export async function addContact(contact) {
+  const session = await getSession()
+  const payload = { ...contact, created_by: session.user.id }
+  const { data, error } = await supabase.from('customer_contacts').insert(payload).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteContact(id) {
+  const { error } = await supabase.from('customer_contacts').delete().eq('id', id)
+  if (error) throw error
+}
