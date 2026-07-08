@@ -108,3 +108,38 @@ export async function getProfiles() {
   if (error) throw error
   return data
 }
+
+// VISITS
+export async function getVisits() {
+  const { data, error } = await supabase
+    .from('visits')
+    .select('*, profiles(name)')
+    .order('visit_date', { ascending: false })
+  if (error) throw error
+  return data
+}
+
+export async function addVisit(visit) {
+  const session = await getSession()
+  const payload = { ...visit, created_by: session.user.id }
+  const { data, error } = await supabase.from('visits').insert(payload).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteVisit(id) {
+  const { error } = await supabase.from('visits').delete().eq('id', id)
+  if (error) throw error
+}
+
+// SETTINGS
+export async function getSetting(key) {
+  const { data, error } = await supabase.from('app_settings').select('value').eq('key', key).maybeSingle()
+  if (error) throw error
+  return data?.value
+}
+
+export async function setSetting(key, value) {
+  const { error } = await supabase.from('app_settings').upsert({ key, value: String(value), updated_at: new Date().toISOString() })
+  if (error) throw error
+}

@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, getSession } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting } from '../lib/supabase.js'
 import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -200,6 +200,25 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .recent-meta{font-size:10px;color:#94a3b8;}
 .recent-val{font-size:12px;font-weight:600;color:#002060;white-space:nowrap;}
 
+/* VISIT */
+.vm-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.vm-name{width:130px;font-size:12px;font-weight:600;color:#1e293b;flex-shrink:0;}
+.vm-track{flex:1;height:20px;background:#f1f5f9;border-radius:10px;overflow:hidden;position:relative;}
+.vm-fill{height:100%;border-radius:10px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:10px;color:#fff;font-weight:600;transition:width .4s;}
+.vm-stat{width:120px;text-align:right;font-size:11px;flex-shrink:0;}
+.vm-badge{padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;}
+.vm-badge.ontrack{background:#dcfce7;color:#16a34a;}
+.vm-badge.behind{background:#fee2e2;color:#dc2626;}
+.visit-row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9;}
+.visit-row:last-child{border:none;}
+.visit-date{width:75px;font-size:11px;color:#64748b;flex-shrink:0;padding-top:1px;}
+.visit-info{flex:1;min-width:0;}
+.visit-cust{font-size:12px;font-weight:600;color:#1e293b;}
+.visit-meta{font-size:10.5px;color:#94a3b8;margin-top:1px;}
+.visit-notes{font-size:11px;color:#475569;margin-top:3px;}
+.v-acitem{padding:7px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid #f8fafc;}
+.v-acitem:hover{background:#eff6ff;}
+
 /* RESPONSIVE - MOBILE */
 @media (max-width: 768px){
   body{font-size:12px;}
@@ -260,7 +279,8 @@ const FULL_LOGO_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAlgAAADlCAYAAACPrYleAAAKMWlDQ1BJQ
 
 let rows = [], ctr = 0, plF = PL_ITEMS.slice(), plPg = 1, plCat = ''
 let mF = PL_ITEMS.slice(), mPg = 1
-let customers = [], products = [], pipeline = [], profiles = []
+let customers = [], products = [], pipeline = [], profiles = [], visits = []
+let visitTarget = 10
 let currentUser = null, onLogout = null
 let dbTab = 'customer', custType = 'all', pipFilter = 'all'
 const PER = 40
@@ -290,6 +310,7 @@ export async function renderApp(container, user, logout) {
     <div class="ntab" onclick="nav('quotation')">📄 Quotation</div>
     <div class="ntab" onclick="nav('pricelist')">💰 Pricelist</div>
     <div class="ntab" onclick="nav('pipeline')">📊 Pipeline</div>
+    <div class="ntab" onclick="nav('visit')">📍 Visit</div>
     <div class="ntab" onclick="nav('database')">🗄 Database</div>
     <div class="nright">
       <span class="user-info" id="user-label">...</span>
@@ -548,6 +569,57 @@ export async function renderApp(container, user, logout) {
     </div>
   </div>
 
+  <!-- VISIT -->
+  <div id="p-visit" class="page">
+    <div class="sg" id="visit-stats"></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
+        <div class="chd" style="margin-bottom:0;">Rekap Visit Bulan Ini</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#64748b;">
+          Target/bulan:
+          <input type="number" id="visit-target" style="width:55px;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;" onchange="saveVisitTarget(this.value)">
+        </div>
+      </div>
+      <div id="visit-monthly"></div>
+    </div>
+    <div class="card">
+      <div class="chd">Catat Visit Baru</div>
+      <div class="g3" style="margin-bottom:8px;">
+        <div class="fld"><label>Tanggal</label><input type="date" id="v-date"></div>
+        <div class="fld" style="position:relative;">
+          <label>Customer (cari dari database)</label>
+          <input id="v-cust" placeholder="Ketik nama customer..." autocomplete="off" oninput="vCustSearch(this.value)" onfocus="vCustSearch(this.value)">
+          <div id="v-cust-drop" class="acdrop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,.08);"></div>
+        </div>
+        <div class="fld"><label>Kontak Person</label><input id="v-contact" placeholder="Pak/Bu..."></div>
+      </div>
+      <div class="g2" style="margin-bottom:8px;">
+        <div class="fld"><label>Tujuan Visit</label>
+          <select id="v-purpose">
+            <option>Follow Up Penawaran</option>
+            <option>Presentasi Produk</option>
+            <option>Kunjungan Rutin</option>
+            <option>Demo / Trial</option>
+            <option>Penagihan</option>
+            <option>After Sales / Support</option>
+            <option>Lainnya</option>
+          </select>
+        </div>
+        <div class="fld"><label>Catatan Hasil Visit</label><input id="v-notes" placeholder="Hasil pembicaraan, next step..."></div>
+      </div>
+      <button class="bp" style="padding:8px 16px;font-size:12px;" id="btn-save-visit" onclick="saveVisit()">💾 Simpan Visit</button>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:8px;">
+        <div class="chd" style="margin-bottom:0;">Riwayat Visit</div>
+        <select id="v-filter-sales" style="padding:6px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" onchange="renderVisitList()">
+          <option value="all">Semua Sales</option>
+        </select>
+      </div>
+      <div id="visit-list"></div>
+    </div>
+  </div>
+
   <!-- DATABASE -->
   <div id="p-database" class="page">
     <div class="dtabs">
@@ -685,7 +757,7 @@ export async function renderApp(container, user, logout) {
   plSearch()
   renderRows()
 
-  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles()])
+  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits()])
   renderDashboard()
 
   // Expose globals
@@ -693,6 +765,7 @@ export async function renderApp(container, user, logout) {
     nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, delR, delS, uf, us,
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
     renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
+    renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
@@ -707,10 +780,11 @@ function nav(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('on'))
   document.querySelectorAll('nav .ntab').forEach(b => b.classList.remove('on'))
   document.getElementById('p-' + name).classList.add('on')
-  const idx = ['dashboard', 'quotation', 'pricelist', 'pipeline', 'database'].indexOf(name)
+  const idx = ['dashboard', 'quotation', 'pricelist', 'pipeline', 'visit', 'database'].indexOf(name)
   document.querySelectorAll('nav .ntab')[idx].classList.add('on')
   if (name === 'pipeline') renderPip()
   if (name === 'dashboard') renderDashboard()
+  if (name === 'visit') renderVisits()
   if (name === 'database') { renderCustList(''); renderProdList('') }
 }
 
@@ -899,6 +973,183 @@ async function loadPipeline() {
 
 async function loadProfiles() {
   try { profiles = await getProfiles() } catch (e) { console.error(e) }
+}
+
+// VISITS
+async function loadVisits() {
+  try {
+    visits = await getVisits()
+    const t = await getSetting('visit_target_monthly')
+    if (t) visitTarget = parseInt(t) || 10
+  } catch (e) { console.error(e) }
+}
+
+function renderVisits() {
+  // Set default date to today
+  const dateEl = document.getElementById('v-date')
+  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10)
+
+  const targetEl = document.getElementById('visit-target')
+  if (targetEl) targetEl.value = visitTarget
+
+  renderVisitStats()
+  renderVisitMonthly()
+  renderVisitList()
+}
+
+function currentMonthVisits() {
+  const now = new Date()
+  const ym = now.toISOString().slice(0, 7) // YYYY-MM
+  return visits.filter(v => (v.visit_date || '').startsWith(ym))
+}
+
+function renderVisitStats() {
+  const el = document.getElementById('visit-stats'); if (!el) return
+  const mv = currentMonthVisits()
+  const total = mv.length
+  const salesCount = new Set(mv.map(v => v.profiles?.name || v.sales_name).filter(Boolean)).size
+  const custCount = new Set(mv.map(v => v.customer_name)).size
+  const myName = profiles.find(p => p.id === currentUser?.id)?.name || (currentUser?.email || '').split('@')[0]
+  const myVisits = mv.filter(v => v.created_by === currentUser?.id).length
+  el.innerHTML = `
+    <div class="sc"><div class="sn">${total}</div><div class="sl">Total Visit Bulan Ini</div></div>
+    <div class="sc"><div class="sn">${myVisits}</div><div class="sl">Visit Saya Bulan Ini</div></div>
+    <div class="sc"><div class="sn">${custCount}</div><div class="sl">Customer Dikunjungi</div></div>
+    <div class="sc"><div class="sn">${visitTarget}</div><div class="sl">Target per Sales</div></div>
+  `
+}
+
+function renderVisitMonthly() {
+  const el = document.getElementById('visit-monthly'); if (!el) return
+  const mv = currentMonthVisits()
+
+  // All known sales names (from profiles + visits + pipeline)
+  const allSales = [...new Set([
+    ...profiles.map(p => p.name),
+    ...visits.map(v => v.profiles?.name || v.sales_name),
+  ].filter(Boolean))].sort()
+
+  const now = new Date()
+  const dayOfMonth = now.getDate()
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const expectedByNow = visitTarget * (dayOfMonth / daysInMonth)
+
+  if (!allSales.length) { el.innerHTML = '<div class="empty">Belum ada data sales.</div>'; return }
+
+  el.innerHTML = allSales.map(name => {
+    const count = mv.filter(v => (v.profiles?.name || v.sales_name) === name).length
+    const pct = Math.min((count / visitTarget) * 100, 100)
+    const onTrack = count >= expectedByNow
+    const color = count >= visitTarget ? '#16a34a' : onTrack ? '#3b82f6' : '#f59e0b'
+    return `<div class="vm-row">
+      <div class="vm-name">${name}</div>
+      <div class="vm-track"><div class="vm-fill" style="width:${Math.max(pct, count > 0 ? 10 : 0)}%;background:${color};">${count > 0 ? count : ''}</div></div>
+      <div class="vm-stat">
+        ${count}/${visitTarget}
+        <span class="vm-badge ${onTrack ? 'ontrack' : 'behind'}">${count >= visitTarget ? '✓ Tercapai' : onTrack ? 'On Track' : 'Behind'}</span>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function renderVisitList() {
+  const el = document.getElementById('visit-list'); if (!el) return
+
+  // Populate sales filter dynamically
+  const sel = document.getElementById('v-filter-sales')
+  if (sel) {
+    const uniqueSales = [...new Set(visits.map(v => v.profiles?.name || v.sales_name).filter(Boolean))].sort()
+    const cur = sel.value || 'all'
+    const opts = '<option value="all">Semua Sales</option>' + uniqueSales.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('')
+    if (sel.innerHTML !== opts) { sel.innerHTML = opts; sel.value = uniqueSales.includes(cur) || cur === 'all' ? cur : 'all' }
+  }
+
+  const sf = sel?.value || 'all'
+  const filtered = visits.filter(v => sf === 'all' || (v.profiles?.name || v.sales_name) === sf).slice(0, 100)
+
+  el.innerHTML = filtered.length ? filtered.map(v => {
+    const salesName = v.profiles?.name || v.sales_name || '-'
+    const mine = v.created_by === currentUser?.id
+    return `<div class="visit-row">
+      <div class="visit-date">${fmtD(v.visit_date)}</div>
+      <div class="visit-info">
+        <div class="visit-cust">${v.customer_name}${v.contact ? ' · ' + v.contact : ''}</div>
+        <div class="visit-meta">${v.purpose || ''} · ${salesName}</div>
+        ${v.notes ? `<div class="visit-notes">${v.notes}</div>` : ''}
+      </div>
+      ${mine ? `<button class="bdel" onclick="delVisit('${v.id}')">🗑</button>` : ''}
+    </div>`
+  }).join('') : '<div class="empty">Belum ada visit tercatat.</div>'
+}
+
+let vSelectedCustId = null
+
+function vCustSearch(q) {
+  const drop = document.getElementById('v-cust-drop'); if (!drop) return
+  vSelectedCustId = null
+  const ql = (q || '').toLowerCase()
+  const matches = customers.filter(c => (c.company || '').toLowerCase().includes(ql)).slice(0, 8)
+  if (!matches.length) { drop.style.display = 'none'; return }
+  drop.innerHTML = matches.map(c =>
+    `<div class="v-acitem" onclick="vCustPick('${c.id}')"><b>${c.company}</b>${c.contact ? ' · ' + c.contact : ''}</div>`
+  ).join('')
+  drop.style.display = 'block'
+}
+
+function vCustPick(id) {
+  const c = customers.find(x => x.id === id); if (!c) return
+  vSelectedCustId = c.id
+  document.getElementById('v-cust').value = c.company || ''
+  if (c.contact) document.getElementById('v-contact').value = c.contact
+  document.getElementById('v-cust-drop').style.display = 'none'
+}
+
+async function saveVisit() {
+  const custName = document.getElementById('v-cust').value.trim()
+  if (!custName) { toast('Nama customer wajib diisi', false); return }
+  const btn = document.getElementById('btn-save-visit')
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Menyimpan...'
+  try {
+    const myName = profiles.find(p => p.id === currentUser?.id)?.name || (currentUser?.email || '').split('@')[0]
+    const v = await addVisit({
+      visit_date: document.getElementById('v-date').value || new Date().toISOString().slice(0, 10),
+      customer_id: vSelectedCustId,
+      customer_name: custName,
+      contact: document.getElementById('v-contact').value,
+      purpose: document.getElementById('v-purpose').value,
+      notes: document.getElementById('v-notes').value,
+      sales_name: myName
+    })
+    visits.unshift({ ...v, profiles: { name: myName } })
+    toast('Visit tersimpan!')
+    document.getElementById('v-cust').value = ''
+    document.getElementById('v-contact').value = ''
+    document.getElementById('v-notes').value = ''
+    vSelectedCustId = null
+    renderVisitStats(); renderVisitMonthly(); renderVisitList()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+  btn.disabled = false; btn.innerHTML = '💾 Simpan Visit'
+}
+
+async function delVisit(id) {
+  if (!confirm('Hapus catatan visit ini?')) return
+  try {
+    await deleteVisit(id)
+    visits = visits.filter(v => v.id !== id)
+    renderVisitStats(); renderVisitMonthly(); renderVisitList()
+    toast('Visit dihapus')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function saveVisitTarget(val) {
+  const n = parseInt(val)
+  if (!n || n < 1) { toast('Target tidak valid', false); return }
+  try {
+    await setSetting('visit_target_monthly', n)
+    visitTarget = n
+    renderVisitStats(); renderVisitMonthly()
+    toast('Target diupdate!')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
 // PRICELIST
