@@ -163,3 +163,9 @@ export async function deleteContact(id) {
   const { error } = await supabase.from('customer_contacts').delete().eq('id', id)
   if (error) throw error
 }
+
+export async function updateContact(id, fields) {
+  const { data, error } = await supabase.from('customer_contacts').update(fields).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}

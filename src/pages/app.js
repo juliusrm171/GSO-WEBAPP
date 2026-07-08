@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
 import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -379,7 +379,7 @@ export async function renderApp(container, user, logout) {
           <div class="fld"><label>Alamat</label><textarea id="f-addr" placeholder="Jl. alamat lengkap..."></textarea></div>
         </div>
         <div class="g3">
-          <div class="fld"><label>Up (Kontak)</label><input id="f-ct" list="f-ct-list" onchange="fCtChanged(this.value)" placeholder="Pilih atau ketik kontak..."><datalist id="f-ct-list"></datalist></div>
+          <div class="fld" style="position:relative;"><label>Up (Kontak)</label><input id="f-ct" autocomplete="off" placeholder="Klik untuk pilih kontak..." onfocus="showCtDrop()" onblur="hideCtDrop()"><div id="f-ct-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,.08);"></div></div>
           <div class="fld"><label>Telp / Mobile</label><input id="f-tel"></div>
           <div class="fld"><label>Fax / Email</label><input id="f-em"></div>
         </div>
@@ -591,7 +591,7 @@ export async function renderApp(container, user, logout) {
           <input id="v-cust" placeholder="Ketik nama customer..." autocomplete="off" oninput="vCustSearch(this.value)" onfocus="vCustSearch(this.value)">
           <div id="v-cust-drop" class="acdrop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,.08);"></div>
         </div>
-        <div class="fld"><label>Kontak Person</label><input id="v-contact" list="v-ct-list" placeholder="Pilih atau ketik kontak..."><datalist id="v-ct-list"></datalist></div>
+        <div class="fld" style="position:relative;"><label>Kontak Person</label><input id="v-contact" autocomplete="off" placeholder="Klik untuk pilih kontak..." onfocus="showVCtDrop()" onblur="hideVCtDrop()"><div id="v-ct-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,.08);"></div></div>
       </div>
       <div class="g2" style="margin-bottom:8px;">
         <div class="fld"><label>Tujuan Visit</label>
@@ -766,7 +766,8 @@ export async function renderApp(container, user, logout) {
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
     renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
     renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
-    toggleContacts, saveNewContact, delContactDB, fCtChanged,
+    toggleContacts, saveNewContact, delContactDB, startEditContact, cancelEditContact, saveEditContact,
+    showCtDrop, hideCtDrop, pickCt, showVCtDrop, hideVCtDrop, pickVCt,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
@@ -821,31 +822,41 @@ function acSrch(q) {
   drop.style.display = 'block'
 }
 
+let qSelectedCustId = null
+
 function selC(id) {
   const c = customers.find(x => x.id === id); if (!c) return
+  qSelectedCustId = c.id
   document.getElementById('f-co').value = c.company || ''
   document.getElementById('f-tel').value = c.tel || ''
   document.getElementById('f-em').value = c.email || ''
   document.getElementById('f-addr').value = c.address || ''
   document.getElementById('acdrop').style.display = 'none'
-
-  // Populate Up (contact) options from the company's contact list
-  const kList = contactsOf(c.id)
-  const dl = document.getElementById('f-ct-list')
-  if (dl) dl.innerHTML = kList.map(k => `<option value="${(k.name || '').replace(/"/g, '&quot;')}">${k.role || ''}</option>`).join('')
-  // Default: first contact or legacy contact field
-  document.getElementById('f-ct').value = kList[0]?.name || c.contact || ''
-  // Auto-fill tel from first contact if company tel empty
-  if (!c.tel && kList[0]?.tel) document.getElementById('f-tel').value = kList[0].tel
+  // Kosongkan kontak — user pilih sendiri dengan klik field kontak
+  document.getElementById('f-ct').value = ''
 }
 
-function fCtChanged(val) {
-  // When user picks a specific contact, auto-fill their tel/email if available
-  const k = contacts.find(x => x.name === val)
-  if (k) {
-    if (k.tel) document.getElementById('f-tel').value = k.tel
-    if (k.email) document.getElementById('f-em').value = k.email
-  }
+function showCtDrop() {
+  const drop = document.getElementById('f-ct-drop'); if (!drop) return
+  if (!qSelectedCustId) { drop.style.display = 'none'; return }
+  const kList = contactsOf(qSelectedCustId)
+  if (!kList.length) { drop.style.display = 'none'; return }
+  drop.innerHTML = kList.map(k =>
+    `<div class="v-acitem" onmousedown="pickCt('${k.id}')"><b>${k.name}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}${k.tel ? '<div style="font-size:10px;color:#94a3b8;">' + k.tel + '</div>' : ''}</div>`
+  ).join('')
+  drop.style.display = 'block'
+}
+
+function hideCtDrop() {
+  setTimeout(() => { const d = document.getElementById('f-ct-drop'); if (d) d.style.display = 'none' }, 150)
+}
+
+function pickCt(id) {
+  const k = contacts.find(x => x.id === id); if (!k) return
+  document.getElementById('f-ct').value = k.name || ''
+  if (k.tel) document.getElementById('f-tel').value = k.tel
+  if (k.email) document.getElementById('f-em').value = k.email
+  document.getElementById('f-ct-drop').style.display = 'none'
 }
 
 // ITEMS
@@ -1018,20 +1029,38 @@ function toggleContacts(custId) {
   renderCustList(document.querySelector('.filter-bar input')?.value || '')
 }
 
+let editingContactId = null
+
 function renderContactPanel(c) {
   const list = contactsOf(c.id)
   return `
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.8rem .9rem;margin-bottom:5px;">
       <div style="font-size:11.5px;font-weight:600;color:#002060;margin-bottom:.5rem;">👥 Kontak di ${c.company}</div>
-      ${list.length ? list.map(k => `
+      ${list.length ? list.map(k => {
+        if (editingContactId === k.id) return `
+        <div style="background:#fff;border:1px solid #fbbf24;border-radius:8px;padding:.6rem;margin:5px 0;">
+          <div class="g4" style="margin-bottom:6px;">
+            <div class="fld"><label>Nama</label><input id="ec-name-${k.id}" value="${(k.name || '').replace(/"/g, '&quot;')}"></div>
+            <div class="fld"><label>Jabatan/Divisi</label><input id="ec-role-${k.id}" value="${(k.role || '').replace(/"/g, '&quot;')}"></div>
+            <div class="fld"><label>Telp</label><input id="ec-tel-${k.id}" value="${(k.tel || '').replace(/"/g, '&quot;')}"></div>
+            <div class="fld"><label>Email</label><input id="ec-email-${k.id}" value="${(k.email || '').replace(/"/g, '&quot;')}"></div>
+          </div>
+          <div style="display:flex;gap:5px;">
+            <button class="bp" style="padding:4px 11px;font-size:11px;" onclick="saveEditContact('${k.id}')">Simpan</button>
+            <button class="bs" style="padding:4px 11px;font-size:11px;" onclick="cancelEditContact()">Batal</button>
+          </div>
+        </div>`
+        return `
         <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #eef2f7;">
           <div style="flex:1;">
             <span style="font-size:12px;font-weight:600;">${k.name}</span>
             ${k.role ? `<span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 7px;border-radius:6px;margin-left:6px;">${k.role}</span>` : ''}
             <div style="font-size:10.5px;color:#94a3b8;">${[k.tel, k.email].filter(Boolean).join(' · ') || '—'}</div>
           </div>
+          <button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditContact('${k.id}')">✏️</button>
           <button class="bdel" onclick="delContactDB('${k.id}')">🗑</button>
-        </div>`).join('') : '<div style="font-size:11px;color:#94a3b8;padding:4px 0;">Belum ada kontak.</div>'}
+        </div>`
+      }).join('') : '<div style="font-size:11px;color:#94a3b8;padding:4px 0;">Belum ada kontak.</div>'}
       <div class="g4" style="margin-top:.6rem;margin-bottom:6px;">
         <div class="fld"><label>Nama</label><input id="nc-name-${c.id}" placeholder="Pak/Bu..."></div>
         <div class="fld"><label>Jabatan/Divisi</label><input id="nc-role-${c.id}" placeholder="Engineer, Purchasing, QC..."></div>
@@ -1040,6 +1069,34 @@ function renderContactPanel(c) {
       </div>
       <button class="bp" style="padding:5px 12px;font-size:11px;" onclick="saveNewContact('${c.id}')">+ Tambah Kontak</button>
     </div>`
+}
+
+function startEditContact(id) {
+  editingContactId = id
+  renderCustList(document.querySelector('.filter-bar input')?.value || '')
+}
+
+function cancelEditContact() {
+  editingContactId = null
+  renderCustList(document.querySelector('.filter-bar input')?.value || '')
+}
+
+async function saveEditContact(id) {
+  const name = document.getElementById('ec-name-' + id)?.value.trim()
+  if (!name) { toast('Nama kontak wajib diisi', false); return }
+  try {
+    const updated = await updateContact(id, {
+      name,
+      role: document.getElementById('ec-role-' + id)?.value || '',
+      tel: document.getElementById('ec-tel-' + id)?.value || '',
+      email: document.getElementById('ec-email-' + id)?.value || ''
+    })
+    const idx = contacts.findIndex(k => k.id === id)
+    if (idx >= 0) contacts[idx] = updated
+    editingContactId = null
+    toast('Kontak diupdate!')
+    renderCustList(document.querySelector('.filter-bar input')?.value || '')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
 async function saveNewContact(custId) {
@@ -1185,11 +1242,29 @@ function vCustPick(id) {
   const c = customers.find(x => x.id === id); if (!c) return
   vSelectedCustId = c.id
   document.getElementById('v-cust').value = c.company || ''
-  const kList = contactsOf(c.id)
-  const dl = document.getElementById('v-ct-list')
-  if (dl) dl.innerHTML = kList.map(k => `<option value="${(k.name || '').replace(/"/g, '&quot;')}">${k.role || ''}</option>`).join('')
-  document.getElementById('v-contact').value = kList[0]?.name || c.contact || ''
+  document.getElementById('v-contact').value = ''
   document.getElementById('v-cust-drop').style.display = 'none'
+}
+
+function showVCtDrop() {
+  const drop = document.getElementById('v-ct-drop'); if (!drop) return
+  if (!vSelectedCustId) { drop.style.display = 'none'; return }
+  const kList = contactsOf(vSelectedCustId)
+  if (!kList.length) { drop.style.display = 'none'; return }
+  drop.innerHTML = kList.map(k =>
+    `<div class="v-acitem" onmousedown="pickVCt('${k.id}')"><b>${k.name}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}</div>`
+  ).join('')
+  drop.style.display = 'block'
+}
+
+function hideVCtDrop() {
+  setTimeout(() => { const d = document.getElementById('v-ct-drop'); if (d) d.style.display = 'none' }, 150)
+}
+
+function pickVCt(id) {
+  const k = contacts.find(x => x.id === id); if (!k) return
+  document.getElementById('v-contact').value = k.name || ''
+  document.getElementById('v-ct-drop').style.display = 'none'
 }
 
 async function saveVisit() {
