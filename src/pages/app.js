@@ -218,6 +218,11 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .visit-notes{font-size:11px;color:#475569;margin-top:3px;}
 .v-acitem{padding:7px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid #f8fafc;}
 .v-acitem:hover{background:#eff6ff;}
+.part-drop{position:absolute;top:100%;left:0;min-width:340px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:220px;overflow-y:auto;z-index:60;box-shadow:0 8px 20px rgba(0,0,0,.12);}
+.part-item{padding:6px 10px;font-size:11px;cursor:pointer;border-bottom:1px solid #f8fafc;}
+.part-item:hover{background:#eff6ff;}
+.part-item b{display:block;font-size:11.5px;color:#002060;}
+.part-item span{color:#64748b;font-size:10.5px;}
 
 /* RESPONSIVE - MOBILE */
 @media (max-width: 768px){
@@ -341,6 +346,10 @@ export async function renderApp(container, user, logout) {
         <div class="chd">Customer Database</div>
         <div id="dash-cust-breakdown"></div>
       </div>
+    </div>
+    <div class="card">
+      <div class="chd">Visit Bulan Ini per Sales</div>
+      <div id="dash-visits"></div>
     </div>
     <div class="card">
       <div class="chd">Penawaran Terbaru</div>
@@ -768,6 +777,7 @@ export async function renderApp(container, user, logout) {
     renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
     toggleContacts, saveNewContact, delContactDB, startEditContact, cancelEditContact, saveEditContact,
     showCtDrop, hideCtDrop, pickCt, showVCtDrop, hideVCtDrop, pickVCt,
+    partSearch, hidePartDrop, pickPart,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
@@ -866,6 +876,34 @@ function aNote() { rows.push({ id: ++ctr, t: 'n', text: '' }); renderRows() }
 function delR(id) { rows = rows.filter(r => r.id !== id); rows.forEach(r => { if (r.subs) r.subs = r.subs.filter(s => s.id !== id) }); renderRows(); recalc() }
 function delS(pid, sid) { const p = rows.find(r => r.id === pid); if (p) p.subs = p.subs.filter(s => s.id !== sid); renderRows() }
 function uf(id, f, v) { const r = rows.find(x => x.id === id); if (r) { r[f] = ['qty', 'price', 'disc'].includes(f) ? +v : v; recalc() } }
+
+// PART NUMBER SEARCH (from pricelist)
+function partSearch(rowId, val) {
+  uf(rowId, 'part', val)
+  const drop = document.getElementById('part-drop-' + rowId); if (!drop) return
+  const q = (val || '').toLowerCase().trim()
+  if (q.length < 2) { drop.style.display = 'none'; return }
+  const matches = PL_ITEMS.filter(p => p[1].toLowerCase().includes(q) || p[0].toLowerCase().includes(q)).slice(0, 10)
+  if (!matches.length) { drop.style.display = 'none'; return }
+  drop.innerHTML = matches.map((p, i) =>
+    `<div class="part-item" onmousedown="pickPart(${rowId},'${p[1].replace(/'/g, "\\'")}')"><b>${p[1]}</b><span>${p[0].includes('—') ? p[0].split('—')[1].trim() : p[0]} · Rp ${p[2].toLocaleString('id-ID')}</span></div>`
+  ).join('')
+  drop.style.display = 'block'
+}
+
+function hidePartDrop() {
+  setTimeout(() => document.querySelectorAll('.part-drop').forEach(d => d.style.display = 'none'), 150)
+}
+
+function pickPart(rowId, partNo) {
+  const p = PL_ITEMS.find(x => x[1] === partNo); if (!p) return
+  const r = rows.find(x => x.id === rowId); if (!r) return
+  r.part = p[1]
+  // Nama: pakai bagian deskripsi setelah "—" kalau ada, kalau tidak pakai full name
+  r.name = p[0].includes('—') ? p[0].split('—')[1].trim() : p[0]
+  r.price = p[2]
+  recalc(); renderRows()
+}
 function us(pid, sid, v) { const p = rows.find(r => r.id === pid); if (p) { const s = p.subs.find(x => x.id === sid); if (s) s.text = v } }
 
 function renderRows() {
@@ -877,7 +915,7 @@ function renderRows() {
     const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#94a3b8;font-size:10px;">${nc}.${si + 1}</td><td></td><td colspan="6"><textarea oninput="us(${r.id},${s.id},this.value)" placeholder="Sub-item..." style="width:100%;padding:3px 4px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:24px;">${s.text || ''}</textarea></td><td><button class="bdel" onclick="delS(${r.id},${s.id})">✕</button></td></tr>`).join('')
     return `<tr>
       <td style="text-align:center;color:#94a3b8;">${nc}</td>
-      <td><input value="${r.part || ''}" placeholder="Part no." oninput="uf(${r.id},'part',this.value)"></td>
+      <td style="position:relative;"><input value="${r.part || ''}" placeholder="Part no. (ketik utk cari)" autocomplete="off" oninput="partSearch(${r.id},this.value)" onblur="hidePartDrop()"><div id="part-drop-${r.id}" class="part-drop" style="display:none;"></div></td>
       <td><textarea oninput="uf(${r.id},'name',this.value)" style="width:100%;min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
         <button onclick="rows.find(x=>x.id===${r.id}).subs.push({id:++ctr,text:''});renderRows();" style="font-size:10px;color:#94a3b8;background:none;border:none;cursor:pointer;">+ sub</button></td>
       <td><input type="number" value="${r.qty}" min="1" oninput="uf(${r.id},'qty',this.value)" style="text-align:right;"></td>
@@ -1554,6 +1592,32 @@ function renderDashboard() {
     <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total Customer</span><span style="font-weight:700;color:#002060;">${customers.length}</span></div>
     <div class="cb-row"><span style="font-size:12px;color:#64748b;">Produk Tersimpan</span><span style="font-weight:700;color:#002060;">${products.length}</span></div>
   `
+
+  // Visit performance per sales (this month)
+  const dvEl = document.getElementById('dash-visits')
+  if (dvEl) {
+    const now = new Date()
+    const ym = now.toISOString().slice(0, 7)
+    const mv = visits.filter(v => (v.visit_date || '').startsWith(ym))
+    const allSales = [...new Set([
+      ...profiles.map(p => p.name),
+      ...visits.map(v => v.profiles?.name || v.sales_name),
+    ].filter(Boolean))].sort()
+    const dayOfMonth = now.getDate()
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const expectedByNow = visitTarget * (dayOfMonth / daysInMonth)
+    dvEl.innerHTML = allSales.length ? allSales.map(name => {
+      const count = mv.filter(v => (v.profiles?.name || v.sales_name) === name).length
+      const pct = Math.min((count / visitTarget) * 100, 100)
+      const onTrack = count >= expectedByNow
+      const color = count >= visitTarget ? '#16a34a' : onTrack ? '#3b82f6' : '#f59e0b'
+      return `<div class="vm-row">
+        <div class="vm-name">${name}</div>
+        <div class="vm-track"><div class="vm-fill" style="width:${Math.max(pct, count > 0 ? 10 : 0)}%;background:${color};">${count > 0 ? count : ''}</div></div>
+        <div class="vm-stat">${count}/${visitTarget} <span class="vm-badge ${onTrack ? 'ontrack' : 'behind'}">${count >= visitTarget ? '✓ Tercapai' : onTrack ? 'On Track' : 'Behind'}</span></div>
+      </div>`
+    }).join('') : '<div class="empty">Belum ada data visit.</div>'
+  }
 
   // Recent quotations
   const recent = pipeline.slice(0, 8)
