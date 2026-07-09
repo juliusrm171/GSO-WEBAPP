@@ -218,7 +218,7 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .visit-notes{font-size:11px;color:#475569;margin-top:3px;}
 .v-acitem{padding:7px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid #f8fafc;}
 .v-acitem:hover{background:#eff6ff;}
-.part-drop{position:absolute;top:100%;left:0;min-width:340px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:220px;overflow-y:auto;z-index:60;box-shadow:0 8px 20px rgba(0,0,0,.12);}
+.part-drop{position:fixed;min-width:340px;max-width:90vw;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:220px;overflow-y:auto;z-index:500;box-shadow:0 8px 20px rgba(0,0,0,.12);}
 .part-item{padding:6px 10px;font-size:11px;cursor:pointer;border-bottom:1px solid #f8fafc;}
 .part-item:hover{background:#eff6ff;}
 .part-item b{display:block;font-size:11.5px;color:#002060;}
@@ -878,21 +878,37 @@ function delS(pid, sid) { const p = rows.find(r => r.id === pid); if (p) p.subs 
 function uf(id, f, v) { const r = rows.find(x => x.id === id); if (r) { r[f] = ['qty', 'price', 'disc'].includes(f) ? +v : v; recalc() } }
 
 // PART NUMBER SEARCH (from pricelist)
-function partSearch(rowId, val) {
+function getPartDrop() {
+  let d = document.getElementById('part-drop-global')
+  if (!d) {
+    d = document.createElement('div')
+    d.id = 'part-drop-global'
+    d.className = 'part-drop'
+    d.style.display = 'none'
+    document.body.appendChild(d)
+  }
+  return d
+}
+
+function partSearch(rowId, el) {
+  const val = el.value
   uf(rowId, 'part', val)
-  const drop = document.getElementById('part-drop-' + rowId); if (!drop) return
+  const drop = getPartDrop()
   const q = (val || '').toLowerCase().trim()
   if (q.length < 2) { drop.style.display = 'none'; return }
   const matches = PL_ITEMS.filter(p => p[1].toLowerCase().includes(q) || p[0].toLowerCase().includes(q)).slice(0, 10)
   if (!matches.length) { drop.style.display = 'none'; return }
-  drop.innerHTML = matches.map((p, i) =>
+  drop.innerHTML = matches.map(p =>
     `<div class="part-item" onmousedown="pickPart(${rowId},'${p[1].replace(/'/g, "\\'")}')"><b>${p[1]}</b><span>${p[0].includes('—') ? p[0].split('—')[1].trim() : p[0]} · Rp ${p[2].toLocaleString('id-ID')}</span></div>`
   ).join('')
+  const rect = el.getBoundingClientRect()
+  drop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 356)) + 'px'
+  drop.style.top = (rect.bottom + 2) + 'px'
   drop.style.display = 'block'
 }
 
 function hidePartDrop() {
-  setTimeout(() => document.querySelectorAll('.part-drop').forEach(d => d.style.display = 'none'), 150)
+  setTimeout(() => { const d = document.getElementById('part-drop-global'); if (d) d.style.display = 'none' }, 150)
 }
 
 function pickPart(rowId, partNo) {
@@ -915,7 +931,7 @@ function renderRows() {
     const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#94a3b8;font-size:10px;">${nc}.${si + 1}</td><td></td><td colspan="6"><textarea oninput="us(${r.id},${s.id},this.value)" placeholder="Sub-item..." style="width:100%;padding:3px 4px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:24px;">${s.text || ''}</textarea></td><td><button class="bdel" onclick="delS(${r.id},${s.id})">✕</button></td></tr>`).join('')
     return `<tr>
       <td style="text-align:center;color:#94a3b8;">${nc}</td>
-      <td style="position:relative;"><input value="${r.part || ''}" placeholder="Part no. (ketik utk cari)" autocomplete="off" oninput="partSearch(${r.id},this.value)" onblur="hidePartDrop()"><div id="part-drop-${r.id}" class="part-drop" style="display:none;"></div></td>
+      <td><input value="${r.part || ''}" placeholder="Part no. (ketik utk cari)" autocomplete="off" oninput="partSearch(${r.id},this)" onblur="hidePartDrop()"></td>
       <td><textarea oninput="uf(${r.id},'name',this.value)" style="width:100%;min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
         <button onclick="rows.find(x=>x.id===${r.id}).subs.push({id:++ctr,text:''});renderRows();" style="font-size:10px;color:#94a3b8;background:none;border:none;cursor:pointer;">+ sub</button></td>
       <td><input type="number" value="${r.qty}" min="1" oninput="uf(${r.id},'qty',this.value)" style="text-align:right;"></td>
