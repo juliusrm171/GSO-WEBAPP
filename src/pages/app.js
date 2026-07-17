@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, updateProfile, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
 import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -223,6 +223,7 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .part-item:hover{background:#eff6ff;}
 .part-item b{display:block;font-size:11.5px;color:#002060;}
 .part-item span{color:#64748b;font-size:10.5px;}
+.role-badge{display:inline-block;background:rgba(255,255,255,.18);color:#fff;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:8px;margin-left:6px;letter-spacing:.3px;}
 
 /* RESPONSIVE - MOBILE */
 @media (max-width: 768px){
@@ -287,10 +288,20 @@ let mF = PL_ITEMS.slice(), mPg = 1
 let customers = [], products = [], pipeline = [], profiles = [], visits = [], contacts = []
 let visitTarget = 10
 let currentUser = null, onLogout = null
+let myRole = 'sales', myProfile = null
 let dbTab = 'customer', custType = 'all', pipFilter = 'all'
 const PER = 40
 
-function fmt(n) { return 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') }
+// ── ROLE HELPERS ──
+const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin', sales: 'Sales', engineer: 'Engineer' }
+const isAdmin = () => myRole === 'admin' || myRole === 'super_admin'
+const isSuper = () => myRole === 'super_admin'
+const canSeeVal = () => myRole !== 'engineer'
+const canQuote = () => myRole !== 'engineer'
+function guardAdmin() { if (!isAdmin()) { toast('Hanya admin yang bisa melakukan ini', false); return false } return true }
+
+function fmt(n) { if (!canSeeVal()) return 'Rp •••'; return 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') }
+function fmtPL(n) { return canSeeVal() ? 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') : 'Rp •••' }
 function fmtD(d) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-' }
 function gv(id) { return document.getElementById(id)?.value || '' }
 function calcR(r) { return r.qty * (r.price || 0) * (1 - (r.disc || 0) / 100) }
@@ -318,7 +329,7 @@ export async function renderApp(container, user, logout) {
     <div class="ntab" onclick="nav('visit')">📍 Visit</div>
     <div class="ntab" onclick="nav('database')">🗄 Database</div>
     <div class="nright">
-      <span class="user-info" id="user-label">...</span>
+      <span class="user-info" id="user-label" onclick="openProfile()" style="cursor:pointer;" title="Lihat profil">...</span>
       <button class="btn-logout" onclick="doLogout()">Keluar</button>
     </div>
   </nav>
@@ -561,7 +572,7 @@ export async function renderApp(container, user, logout) {
         <select id="pip-sales" style="padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" onchange="renderPip()">
           <option value="all">Semua Sales</option>
         </select>
-        <button class="bs" style="padding:7px 11px;font-size:11px;" onclick="expCSV()">⬇ CSV</button>
+        <button class="bs" id="btn-exp-csv" style="padding:7px 11px;font-size:11px;" onclick="expCSV()">⬇ CSV</button>
         <button class="bs" style="padding:7px 11px;font-size:11px;" onclick="loadPipeline()">↻ Refresh</button>
       </div>
       <div class="tblwrap"><table class="piptbl">
@@ -641,7 +652,7 @@ export async function renderApp(container, user, logout) {
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
           <div style="font-size:14px;font-weight:500;">Daftar Customer (<span id="cc">0</span>)</div>
-          <button class="bxs" onclick="toggleAddCust()">+ Tambah Customer</button>
+          <button class="bxs" id="btn-add-cust" onclick="toggleAddCust()">+ Tambah Customer</button>
         </div>
 
         <!-- Add customer form -->
@@ -692,7 +703,7 @@ export async function renderApp(container, user, logout) {
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
           <div style="font-size:14px;font-weight:500;">Produk Tersimpan (<span id="pc">0</span>)</div>
-          <button class="bxs" onclick="toggleAP()">+ Tambah Manual</button>
+          <button class="bxs" id="btn-add-prod" onclick="toggleAP()">+ Tambah Manual</button>
         </div>
         <div id="ap" style="display:none;padding:9px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">
           <div class="g2" style="margin-bottom:7px;">
@@ -746,6 +757,31 @@ export async function renderApp(container, user, logout) {
     </div>
   </div>
 
+  <!-- MODAL PROFILE -->
+  <div class="modal-overlay" id="profile-overlay">
+    <div class="modal" style="width:520px;">
+      <div class="modal-hd">
+        <span>👤 Profil Saya</span>
+        <button onclick="closeProfile()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-bd">
+        <div class="g2" style="margin-bottom:8px;">
+          <div class="fld"><label>Nama</label><input id="pf-name"></div>
+          <div class="fld"><label>Inisial (untuk nomor quotation)</label><input id="pf-init" maxlength="4" style="text-transform:uppercase;" placeholder="JRM"></div>
+        </div>
+        <div class="g2" style="margin-bottom:10px;">
+          <div class="fld"><label>Email</label><input id="pf-email" disabled style="background:#f8fafc;color:#94a3b8;"></div>
+          <div class="fld"><label>Role</label><input id="pf-role" disabled style="background:#f8fafc;color:#94a3b8;"></div>
+        </div>
+        <button class="bp" style="padding:7px 14px;font-size:12px;" onclick="saveMyProfile()">Simpan Profil</button>
+        <div id="pf-users" style="display:none;margin-top:14px;border-top:1px solid #e2e8f0;padding-top:10px;">
+          <div style="font-size:12px;font-weight:600;color:#002060;margin-bottom:6px;">⚙️ Manajemen User (Super Admin)</div>
+          <div id="pf-user-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="gso-toast"></div>`
 
   // Init
@@ -767,7 +803,12 @@ export async function renderApp(container, user, logout) {
   renderRows()
 
   await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts()])
+  applyRoleUI()
   renderDashboard()
+
+  document.getElementById('profile-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('profile-overlay')) closeProfile()
+  })
 
   // Expose globals
   Object.assign(window, {
@@ -783,8 +824,77 @@ export async function renderApp(container, user, logout) {
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
     doPDF, doSaveQuo, doLogout: onLogout,
-    switchDbTab
+    switchDbTab,
+    openProfile, closeProfile, saveMyProfile, chgUserRole
   })
+}
+
+// ── ROLE UI ──
+function applyRoleUI() {
+  myProfile = profiles.find(p => p.id === currentUser?.id) || null
+  // Fallback: kalau kolom role belum ada (migration belum dijalankan), jangan kunci siapa pun
+  myRole = myProfile ? (myProfile.role === undefined ? 'admin' : (myProfile.role || 'sales')) : 'sales'
+
+  const lbl = document.getElementById('user-label')
+  if (lbl) lbl.innerHTML = `${myProfile?.name || currentUser?.email || ''} <span class="role-badge">${ROLE_LABELS[myRole] || myRole}</span>`
+
+  // Engineer: sembunyikan tab Quotation (tidak boleh membuat penawaran)
+  if (!canQuote()) document.querySelectorAll('nav .ntab').forEach(t => {
+    if (t.textContent.includes('Quotation')) t.style.display = 'none'
+  })
+
+  // Non-admin: sembunyikan tombol tulis database, export, dan kunci target visit
+  if (!isAdmin()) {
+    ;['btn-add-cust', 'btn-add-prod', 'btn-exp-csv'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.style.display = 'none'
+    })
+    const vt = document.getElementById('visit-target'); if (vt) vt.disabled = true
+  }
+}
+
+// ── PROFILE ──
+function openProfile() {
+  document.getElementById('pf-name').value = myProfile?.name || ''
+  document.getElementById('pf-init').value = myProfile?.initials || ''
+  document.getElementById('pf-email').value = currentUser?.email || ''
+  document.getElementById('pf-role').value = ROLE_LABELS[myRole] || myRole
+  const uw = document.getElementById('pf-users')
+  if (isSuper()) {
+    uw.style.display = 'block'
+    document.getElementById('pf-user-list').innerHTML = profiles.map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;">
+        <div style="flex:1;font-size:12px;">${p.name || '-'}<div style="font-size:10px;color:#94a3b8;">${p.initials ? 'Inisial: ' + p.initials : ''}</div></div>
+        <select style="padding:4px 7px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;" onchange="chgUserRole('${p.id}',this.value)">
+          ${Object.entries(ROLE_LABELS).map(([v, l]) => `<option value="${v}"${(p.role || 'sales') === v ? ' selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </div>`).join('')
+  } else uw.style.display = 'none'
+  document.getElementById('profile-overlay').classList.add('on')
+}
+
+function closeProfile() { document.getElementById('profile-overlay').classList.remove('on') }
+
+async function saveMyProfile() {
+  const name = document.getElementById('pf-name').value.trim()
+  const initials = document.getElementById('pf-init').value.trim().toUpperCase()
+  if (!name) { toast('Nama wajib diisi', false); return }
+  try {
+    const p = await updateProfile(currentUser.id, { name, initials })
+    const i = profiles.findIndex(x => x.id === p.id); if (i >= 0) profiles[i] = p
+    applyRoleUI()
+    toast('Profil tersimpan!')
+    closeProfile()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function chgUserRole(id, role) {
+  if (!isSuper()) { toast('Hanya super admin', false); return }
+  try {
+    const p = await updateProfile(id, { role })
+    const i = profiles.findIndex(x => x.id === p.id); if (i >= 0) profiles[i] = p
+    if (id === currentUser.id) applyRoleUI()
+    toast('Role ' + (p.name || '') + ' → ' + (ROLE_LABELS[role] || role))
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
 // NAV
@@ -899,7 +1009,7 @@ function partSearch(rowId, el) {
   const matches = PL_ITEMS.filter(p => p[1].toLowerCase().includes(q) || p[0].toLowerCase().includes(q)).slice(0, 10)
   if (!matches.length) { drop.style.display = 'none'; return }
   drop.innerHTML = matches.map(p =>
-    `<div class="part-item" onmousedown="pickPart(${rowId},'${p[1].replace(/'/g, "\\'")}')"><b>${p[1]}</b><span>${p[0].includes('—') ? p[0].split('—')[1].trim() : p[0]} · Rp ${p[2].toLocaleString('id-ID')}</span></div>`
+    `<div class="part-item" onmousedown="pickPart(${rowId},'${p[1].replace(/'/g, "\\'")}')"><b>${p[1]}</b><span>${p[0].includes('—') ? p[0].split('—')[1].trim() : p[0]} · ${fmtPL(p[2])}</span></div>`
   ).join('')
   const rect = el.getBoundingClientRect()
   drop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 356)) + 'px'
@@ -992,6 +1102,7 @@ function renderPrev() {
 }
 
 function doPDF() {
+  if (!canQuote()) { toast('Engineer tidak bisa membuat quotation', false); return }
   const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
   generatePDF({
     info: { qo_number: gv('f-no'), date: gv('f-date'), valid_until: gv('f-valid'), sales_name: gv('f-sales'), sales_mobile: gv('f-mobile'), payment_terms: gv('f-pay'), delivery_terms: gv('f-del'), notes: gv('f-notes'), vat_pct: vp, discount_pct: dp },
@@ -1002,6 +1113,7 @@ function doPDF() {
 }
 
 async function doSaveQuo() {
+  if (!canQuote()) { toast('Engineer tidak bisa membuat quotation', false); return }
   const btn = document.getElementById('btn-save-quo')
   const tot = rows.filter(r => r.t === 'i').reduce((s, r) => s + calcR(r), 0)
   const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
@@ -1022,6 +1134,7 @@ async function doSaveQuo() {
 }
 
 async function doSaveCust() {
+  if (!guardAdmin()) return
   const co = gv('f-co'); if (!co) { toast('Isi nama perusahaan dulu', false); return }
   try {
     const c = await upsertCustomer({ company: co, contact: gv('f-ct'), tel: gv('f-tel'), email: gv('f-em'), address: gv('f-addr'), customer_type: 'PT' })
@@ -1111,17 +1224,17 @@ function renderContactPanel(c) {
             ${k.role ? `<span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 7px;border-radius:6px;margin-left:6px;">${k.role}</span>` : ''}
             <div style="font-size:10.5px;color:#94a3b8;">${[k.tel, k.email].filter(Boolean).join(' · ') || '—'}</div>
           </div>
-          <button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditContact('${k.id}')">✏️</button>
-          <button class="bdel" onclick="delContactDB('${k.id}')">🗑</button>
+          ${isAdmin() ? `<button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditContact('${k.id}')">✏️</button>
+          <button class="bdel" onclick="delContactDB('${k.id}')">🗑</button>` : ''}
         </div>`
       }).join('') : '<div style="font-size:11px;color:#94a3b8;padding:4px 0;">Belum ada kontak.</div>'}
-      <div class="g4" style="margin-top:.6rem;margin-bottom:6px;">
+      ${isAdmin() ? `<div class="g4" style="margin-top:.6rem;margin-bottom:6px;">
         <div class="fld"><label>Nama</label><input id="nc-name-${c.id}" placeholder="Pak/Bu..."></div>
         <div class="fld"><label>Jabatan/Divisi</label><input id="nc-role-${c.id}" placeholder="Engineer, Purchasing, QC..."></div>
         <div class="fld"><label>Telp</label><input id="nc-tel-${c.id}" placeholder="+62..."></div>
         <div class="fld"><label>Email</label><input id="nc-email-${c.id}" placeholder="email@..."></div>
       </div>
-      <button class="bp" style="padding:5px 12px;font-size:11px;" onclick="saveNewContact('${c.id}')">+ Tambah Kontak</button>
+      <button class="bp" style="padding:5px 12px;font-size:11px;" onclick="saveNewContact('${c.id}')">+ Tambah Kontak</button>` : ''}
     </div>`
 }
 
@@ -1136,6 +1249,7 @@ function cancelEditContact() {
 }
 
 async function saveEditContact(id) {
+  if (!guardAdmin()) return
   const name = document.getElementById('ec-name-' + id)?.value.trim()
   if (!name) { toast('Nama kontak wajib diisi', false); return }
   try {
@@ -1154,6 +1268,7 @@ async function saveEditContact(id) {
 }
 
 async function saveNewContact(custId) {
+  if (!guardAdmin()) return
   const name = document.getElementById('nc-name-' + custId)?.value.trim()
   if (!name) { toast('Nama kontak wajib diisi', false); return }
   try {
@@ -1171,6 +1286,7 @@ async function saveNewContact(custId) {
 }
 
 async function delContactDB(id) {
+  if (!guardAdmin()) return
   if (!confirm('Hapus kontak ini?')) return
   try {
     await deleteContact(id)
@@ -1273,7 +1389,7 @@ function renderVisitList() {
         <div class="visit-meta">${v.purpose || ''} · ${salesName}</div>
         ${v.notes ? `<div class="visit-notes">${v.notes}</div>` : ''}
       </div>
-      ${mine ? `<button class="bdel" onclick="delVisit('${v.id}')">🗑</button>` : ''}
+      ${(mine || isAdmin()) ? `<button class="bdel" onclick="delVisit('${v.id}')">🗑</button>` : ''}
     </div>`
   }).join('') : '<div class="empty">Belum ada visit tercatat.</div>'
 }
@@ -1322,6 +1438,7 @@ function pickVCt(id) {
 }
 
 async function saveVisit() {
+  if (!canQuote()) { toast('Engineer tidak bisa input visit', false); return }
   const custName = document.getElementById('v-cust').value.trim()
   if (!custName) { toast('Nama customer wajib diisi', false); return }
   const btn = document.getElementById('btn-save-visit')
@@ -1359,6 +1476,7 @@ async function delVisit(id) {
 }
 
 async function saveVisitTarget(val) {
+  if (!guardAdmin()) return
   const n = parseInt(val)
   if (!n || n < 1) { toast('Target tidak valid', false); return }
   try {
@@ -1410,10 +1528,10 @@ function renderPL() {
       <td style="color:#94a3b8;font-size:11px;">${start + i + 1}</td>
       <td><div style="font-weight:500;font-size:12px;">${part}</div>${spec ? `<div style="font-size:10px;color:#94a3b8;">${spec}</div>` : ''}</td>
       <td><span class="badge">${PL_CATS[catI]}</span></td>
-      <td class="pc">Rp ${Math.round(price).toLocaleString('id-ID')}</td>
+      <td class="pc">${fmtPL(price)}</td>
       <td style="display:flex;gap:4px;">
-        <button class="bxs" onclick="addFromPL('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price})">+ Quote</button>
-        <button class="bxs" style="border-color:#e2e8f0;color:#64748b;" onclick="saveStarPL('${part.replace(/'/g, "\\'")}',${price},'${PL_CATS[catI]}')">★</button>
+        ${canQuote() ? `<button class="bxs" onclick="addFromPL('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price})">+ Quote</button>` : ''}
+        ${isAdmin() ? `<button class="bxs" style="border-color:#e2e8f0;color:#64748b;" onclick="saveStarPL('${part.replace(/'/g, "\\'")}',${price},'${PL_CATS[catI]}')">★</button>` : ''}
       </td></tr>`
   }).join('') : `<tr><td colspan="5" class="empty">Tidak ada produk cocok.</td></tr>`
   const total = Math.ceil(plF.length / PER)
@@ -1423,6 +1541,7 @@ function renderPL() {
 function plGo(p) { plPg = p; renderPL() }
 function addFromPL(part, name, price) { aItem(name, part, 1, 'unit', price, 0); nav('quotation'); qt('items'); toast(part + ' ditambahkan!') }
 async function saveStarPL(part, price, cat) {
+  if (!guardAdmin()) return
   try {
     const p = await upsertProduct({ name: part, part, price, unit: 'unit', category: cat })
     if (!products.find(x => x.id === p.id)) products.unshift(p)
@@ -1456,7 +1575,7 @@ function renderM() {
     return `<tr style="border-bottom:1px solid #f1f5f9;">
       <td style="padding:5px 7px;"><div style="font-weight:500;font-size:11px;">${part}</div>${spec ? `<div style="font-size:10px;color:#94a3b8;">${spec}</div>` : ''}</td>
       <td style="padding:5px 7px;"><span class="badge" style="font-size:9px;">${PL_CATS[catI]}</span></td>
-      <td style="padding:5px 7px;text-align:right;font-weight:600;color:#002060;white-space:nowrap;">Rp ${Math.round(price).toLocaleString('id-ID')}</td>
+      <td style="padding:5px 7px;text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmtPL(price)}</td>
       <td style="padding:5px 7px;"><button class="bxs" onclick="mAdd('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price})">+ Tambah</button></td>
     </tr>`
   }).join('') : `<tr><td colspan="4" class="empty">Tidak ada produk.</td></tr>`
@@ -1497,7 +1616,7 @@ function renderPip() {
   filtered.forEach(h => { if (h.status in stats) { stats[h.status]++; vals[h.status] += (h.grand_total || 0) } })
 
   const sg = document.getElementById('sg')
-  if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">Rp ${((vals[s] || 0) / 1e6).toFixed(0)}M</div></div>`).join('')
+  if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">${canSeeVal() ? 'Rp ' + ((vals[s] || 0) / 1e6).toFixed(0) + 'M' : 'Rp •••'}</div></div>`).join('')
 
   const bd = document.getElementById('pip-bd'); if (!bd) return
   bd.innerHTML = filtered.map(h => {
@@ -1511,8 +1630,8 @@ function renderPip() {
       <td style="font-size:11px;color:#64748b;">${salesName}</td>
       <td>${cust.company || '-'}</td>
       <td style="color:#64748b;font-size:11px;">${desc || '-'}</td>
-      <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? 'Rp ' + Math.round(h.grand_total).toLocaleString('id-ID') : '-'}</td>
-      <td><select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select></td>
+      <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? fmt(h.grand_total) : '-'}</td>
+      <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}</td>
     </tr>`
   }).join('') || `<tr><td colspan="7" class="empty">Tidak ada data.</td></tr>`
 
@@ -1652,6 +1771,10 @@ function renderDashboard() {
 }
 
 async function updS(id, val) {
+  const h0 = pipeline.find(x => x.id === id)
+  if (!(isAdmin() || (myRole === 'sales' && h0?.created_by === currentUser?.id))) {
+    toast('Kamu hanya bisa mengubah status penawaran milikmu sendiri', false); renderPip(); return
+  }
   try {
     await updateQuotationStatus(id, val)
     const h = pipeline.find(x => x.id === id); if (h) h.status = val
@@ -1660,6 +1783,7 @@ async function updS(id, val) {
 }
 
 function expCSV() {
+  if (!guardAdmin()) return
   const r = [['QO No.', 'Tanggal', 'Sales', 'Customer', 'Grand Total', 'Status'], ...pipeline.map(h => [h.qo_number, h.date, h.sales_name, h.customer_snapshot?.company, h.grand_total, h.status])]
   const csv = r.map(row => row.map(c => `"${(c || '').toString().replace(/"/g, '""')}"`).join(',')).join('\n')
   const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv); a.download = 'GSO_Pipeline.csv'; a.click()
@@ -1687,6 +1811,7 @@ function setCustTypeFilter(val) {
 }
 
 async function saveNewCust() {
+  if (!guardAdmin()) return
   const name = document.getElementById('nc-name').value.trim()
   if (!name) { toast('Nama wajib diisi', false); return }
   const btn = document.getElementById('btn-save-cust')
@@ -1733,9 +1858,9 @@ function renderCustList(q) {
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0;">
         <button class="bxs" onclick="toggleContacts('${c.id}')">👥 Kontak${nContacts ? ' (' + nContacts + ')' : ''}</button>
-        <button class="bxs" onclick="selC('${c.id}');nav('quotation')">Gunakan</button>
-        <button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditCust('${c.id}')">✏️ Edit</button>
-        <button class="bdel" onclick="delCustDB('${c.id}')">🗑</button>
+        ${canQuote() ? `<button class="bxs" onclick="selC('${c.id}');nav('quotation')">Gunakan</button>` : ''}
+        ${isAdmin() ? `<button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditCust('${c.id}')">✏️ Edit</button>
+        <button class="bdel" onclick="delCustDB('${c.id}')">🗑</button>` : ''}
       </div>
     </div>`
     return expandedContactCustId === c.id ? row + renderContactPanel(c) : row
@@ -1795,6 +1920,7 @@ function cancelEditCust() {
 }
 
 async function saveEditCust(id) {
+  if (!guardAdmin()) return
   const name = document.getElementById('ec-name').value.trim()
   if (!name) { toast('Nama wajib diisi', false); return }
   const btn = document.getElementById('btn-save-edit-cust')
@@ -1819,6 +1945,7 @@ async function saveEditCust(id) {
 }
 
 async function delCustDB(id) {
+  if (!guardAdmin()) return
   if (!confirm('Hapus customer ini?')) return
   try {
     await deleteCustomer(id)
@@ -1837,11 +1964,11 @@ function renderProdList(q) {
     if (editingProdId === p.id) return renderProdEditRow(p)
     return `
     <div class="dbi">
-      <div><div class="dn">${p.name}</div><div class="dm">Rp ${Math.round(p.price || 0).toLocaleString('id-ID')} / ${p.unit || 'unit'} · ${p.category || ''}</div></div>
+      <div><div class="dn">${p.name}</div><div class="dm">${fmtPL(p.price || 0)} / ${p.unit || 'unit'} · ${p.category || ''}</div></div>
       <div style="display:flex;gap:4px;">
-        <button class="bxs" onclick="aItem('${p.name.replace(/'/g, "\\'")}','${(p.part || '').replace(/'/g, "\\'")}',1,'${p.unit || 'unit'}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button>
-        <button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditProd('${p.id}')">✏️ Edit</button>
-        <button class="bdel" onclick="delProd('${p.id}')">🗑</button>
+        ${canQuote() ? `<button class="bxs" onclick="aItem('${p.name.replace(/'/g, "\\'")}','${(p.part || '').replace(/'/g, "\\'")}',1,'${p.unit || 'unit'}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button>` : ''}
+        ${isAdmin() ? `<button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditProd('${p.id}')">✏️ Edit</button>
+        <button class="bdel" onclick="delProd('${p.id}')">🗑</button>` : ''}
       </div>
     </div>`
   }).join('') : `<div class="empty">Belum ada produk tersimpan.<br>Klik ★ di Pricelist untuk simpan.</div>`
@@ -1880,6 +2007,7 @@ function cancelEditProd() {
 }
 
 async function saveEditProd(id) {
+  if (!guardAdmin()) return
   const n = document.getElementById('ep-n').value.trim()
   if (!n) { toast('Nama wajib diisi', false); return }
   const btn = document.getElementById('btn-save-edit-prod')
@@ -1903,6 +2031,7 @@ async function saveEditProd(id) {
 function toggleAP() { const el = document.getElementById('ap'); el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none' }
 
 async function saveProd() {
+  if (!guardAdmin()) return
   const n = document.getElementById('np-n').value; if (!n) { toast('Nama wajib diisi', false); return }
   try {
     const p = await upsertProduct({ name: n, part: document.getElementById('np-p').value, price: +(document.getElementById('np-pr').value || 0), unit: document.getElementById('np-u').value || 'unit', category: document.getElementById('np-c').value })
@@ -1914,6 +2043,7 @@ async function saveProd() {
 }
 
 async function delProd(id) {
+  if (!guardAdmin()) return
   try {
     await deleteProduct(id)
     products = products.filter(x => x.id !== id)

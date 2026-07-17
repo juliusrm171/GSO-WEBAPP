@@ -109,6 +109,12 @@ export async function getProfiles() {
   return data
 }
 
+export async function updateProfile(id, fields) {
+  const { data, error } = await supabase.from('profiles').update(fields).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
 // VISITS
 export async function getVisits() {
   const { data, error } = await supabase
