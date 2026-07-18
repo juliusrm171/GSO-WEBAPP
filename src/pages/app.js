@@ -918,6 +918,9 @@ async function saveMyProfile() {
     const p = await updateProfile(currentUser.id, { name, initials })
     const i = profiles.findIndex(x => x.id === p.id); if (i >= 0) profiles[i] = p
     applyRoleUI()
+    // Refresh nomor quotation kalau masih nomor auto-generate (belum diedit manual)
+    const noEl = document.getElementById('f-no')
+    if (noEl && /^Q[A-Z]{1,4}\d{6}\d{2}$/.test(noEl.value)) noEl.value = genQuoNo()
     toast('Profil tersimpan!')
     closeProfile()
   } catch (e) { toast('Gagal: ' + e.message, false) }
