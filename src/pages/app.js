@@ -636,8 +636,8 @@ export async function renderApp(container, user, logout) {
       <div class="chd">📥 Input Shodan (Inquiry / Forecast)</div>
       <div class="g3" style="margin-bottom:8px;">
         <div class="fld"><label>Judul / Inquiry</label><input id="sh-title" placeholder="Contoh: Kamera inspeksi label line 3"></div>
-        <div class="fld"><label>Customer</label><input id="sh-cust" list="cust-dl" placeholder="Ketik nama customer..." autocomplete="off"></div>
-        <div class="fld"><label>Kontak Person</label><input id="sh-contact"></div>
+        <div class="fld"><label>Customer</label><input id="sh-cust" list="cust-dl" placeholder="Ketik nama customer..." autocomplete="off" oninput="shCustChange()" onchange="shCustChange()"></div>
+        <div class="fld" style="position:relative;"><label>Kontak Person</label><input id="sh-contact" autocomplete="off" placeholder="Klik untuk pilih kontak..." onfocus="showShCtDrop()" onblur="hideShCtDrop()"><div id="sh-ct-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,.08);"></div></div>
       </div>
       <div class="g3" style="margin-bottom:8px;">
         <div class="fld"><label>Estimasi Value (Rp)</label><input id="sh-val" type="number"></div>
@@ -909,7 +909,8 @@ export async function renderApp(container, user, logout) {
     doPDF, doSaveQuo, doLogout: onLogout,
     switchDbTab,
     openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo,
-    updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo
+    updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
+    shCustChange, showShCtDrop, hideShCtDrop, pickShCt
   })
 }
 
@@ -1954,6 +1955,37 @@ async function saveShodan() {
 }
 
 function canEditShodan(s) { return isAdmin() || (myRole === 'sales' && s.created_by === currentUser?.id) }
+
+// Kontak person shodan: dropdown kontak dari customer yang dipilih (sama seperti Quotation & Visit)
+let shSelectedCustId = null
+function shCustChange() {
+  const name = (gv('sh-cust') || '').toLowerCase().trim()
+  const c = customers.find(x => (x.company || '').toLowerCase() === name)
+  const changed = (c?.id || null) !== shSelectedCustId
+  shSelectedCustId = c?.id || null
+  if (changed) document.getElementById('sh-contact').value = ''
+}
+
+function showShCtDrop() {
+  const drop = document.getElementById('sh-ct-drop'); if (!drop) return
+  if (!shSelectedCustId) { drop.style.display = 'none'; return }
+  const kList = contactsOf(shSelectedCustId)
+  if (!kList.length) { drop.style.display = 'none'; return }
+  drop.innerHTML = kList.map(k =>
+    `<div class="v-acitem" onmousedown="pickShCt('${k.id}')"><b>${k.name}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}${k.tel ? '<div style="font-size:10px;color:#94a3b8;">' + k.tel + '</div>' : ''}</div>`
+  ).join('')
+  drop.style.display = 'block'
+}
+
+function hideShCtDrop() {
+  setTimeout(() => { const d = document.getElementById('sh-ct-drop'); if (d) d.style.display = 'none' }, 150)
+}
+
+function pickShCt(id) {
+  const k = contacts.find(x => x.id === id); if (!k) return
+  document.getElementById('sh-contact').value = k.name || ''
+  document.getElementById('sh-ct-drop').style.display = 'none'
+}
 
 function renderShodan() {
   const bd = document.getElementById('sh-bd'); if (!bd) return
