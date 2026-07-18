@@ -906,10 +906,11 @@ function applyRoleUI() {
   const lbl = document.getElementById('user-label')
   if (lbl) lbl.innerHTML = `${myProfile?.name || currentUser?.email || ''} <span class="role-badge">${ROLE_LABELS[myRole] || myRole}</span>`
 
-  // Engineer: sembunyikan tab Quotation (tidak boleh membuat penawaran) + form input shodan
+  // Engineer: sembunyikan tab Quotation, Pricelist (berisi harga), dan Shodan (hanya form input).
+  // Engineer tetap bisa lihat shodan di Pipeline, tapi tanpa nominal.
   if (!canQuote()) {
     document.querySelectorAll('nav .ntab').forEach(t => {
-      if (t.textContent.includes('Quotation')) t.style.display = 'none'
+      if (['Quotation', 'Pricelist', 'Shodan'].some(x => t.textContent.includes(x))) t.style.display = 'none'
     })
     const sf = document.getElementById('shodan-form-card'); if (sf) sf.style.display = 'none'
   }
