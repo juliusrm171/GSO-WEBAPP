@@ -724,6 +724,10 @@ export async function renderApp(container, user, logout) {
 
     <!-- Customer tab -->
     <div id="db-customer-panel">
+      <div class="card" id="kanvas-card" style="display:none;border-left:4px solid #f59e0b;">
+        <div class="chd" style="color:#b45309;">📥 Hasil Kanvasing — Menunggu Dimasukkan ke Database (<span id="kanvas-ct">0</span>)</div>
+        <div id="kanvas-list"></div>
+      </div>
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
           <div style="font-size:14px;font-weight:500;">Daftar Customer (<span id="cc">0</span>)</div>
@@ -906,7 +910,7 @@ export async function renderApp(container, user, logout) {
     openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo,
     updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
-    vRelatedFill, custFromVisit, togglePipVisits
+    vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList
   })
 }
 
@@ -1611,22 +1615,74 @@ async function saveVisit() {
   btn.disabled = false; btn.innerHTML = '💾 Simpan Visit'
 }
 
-// Kanvasing → masuk database customer (hanya admin/super admin)
-async function custFromVisit(visitId) {
+// ── KANVASING → DATABASE (admin melengkapi detail lewat form di tab Database) ──
+let pendingKanvasName = null
+
+function kanvasVisits() {
+  // Visit yang customer-nya belum ada di database
+  return visits.filter(v => !v.customer_id && !customers.some(c => (c.company || '').toLowerCase() === (v.customer_name || '').toLowerCase()))
+}
+
+function renderKanvasList() {
+  const card = document.getElementById('kanvas-card'), list = document.getElementById('kanvas-list')
+  if (!card || !list) return
+  if (!isAdmin()) { card.style.display = 'none'; return }
+  const kv = kanvasVisits()
+  // Grup per nama customer
+  const byName = {}
+  kv.forEach(v => {
+    const key = (v.customer_name || '').trim(); if (!key) return
+    if (!byName[key]) byName[key] = { name: key, contact: v.contact, sales: v.profiles?.name || v.sales_name || '-', last: v.visit_date, count: 0 }
+    byName[key].count++
+    if (v.visit_date > byName[key].last) { byName[key].last = v.visit_date; if (v.contact) byName[key].contact = v.contact }
+  })
+  const items = Object.values(byName)
+  document.getElementById('kanvas-ct').textContent = items.length
+  if (!items.length) { card.style.display = 'none'; return }
+  card.style.display = 'block'
+  list.innerHTML = items.map(i => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #fef3c7;font-size:12px;">
+      <div style="flex:1;"><b>${i.name}</b>${i.contact ? ' · ' + i.contact : ''}
+        <div style="font-size:10px;color:#94a3b8;">${i.count} visit · terakhir ${fmtD(i.last)} · ${i.sales}</div>
+      </div>
+      <button class="bxs" onclick="kanvasToForm('${i.name.replace(/'/g, "\\'")}')">➕ Lengkapi & Tambah</button>
+    </div>`).join('')
+}
+
+function kanvasToForm(name) {
+  if (!guardAdmin()) return
+  pendingKanvasName = name
+  const v = visits.filter(x => (x.customer_name || '').trim() === name).sort((a, b) => (b.visit_date || '').localeCompare(a.visit_date || ''))[0]
+  const form = document.getElementById('add-cust-form')
+  if (form) form.style.display = 'block'
+  document.getElementById('nc-name').value = name
+  document.getElementById('nc-contact').value = v?.contact || ''
+  document.getElementById('nc-industry').value = 'Hasil kanvasing'
+  document.getElementById('nc-addr').focus()
+  form?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  toast('Lengkapi alamat & detail, lalu Simpan')
+}
+
+// Dari tab Visit: arahkan admin ke form database yang sudah terisi
+function custFromVisit(visitId) {
   if (!guardAdmin()) return
   const v = visits.find(x => x.id === visitId); if (!v) return
-  if (!confirm(`Tambahkan "${v.customer_name}" ke database customer?`)) return
-  try {
-    const c = await upsertCustomer({ company: v.customer_name, contact: v.contact || '', customer_type: 'PT', industry: 'Hasil kanvasing' })
-    if (!customers.find(x => x.id === c.id)) customers.unshift(c)
+  nav('database'); switchDbTab('customer')
+  kanvasToForm((v.customer_name || '').trim())
+}
+
+// Setelah customer kanvasing tersimpan: link semua visit dengan nama sama
+async function linkKanvasVisits(cust) {
+  const name = (pendingKanvasName || '').toLowerCase(); if (!name) return
+  pendingKanvasName = null
+  const targets = visits.filter(v => !v.customer_id && (v.customer_name || '').toLowerCase() === name)
+  for (const v of targets) {
     try {
-      const nv = await updateVisit(visitId, { customer_id: c.id })
-      const i = visits.findIndex(x => x.id === visitId); if (i >= 0) visits[i] = nv
+      const nv = await updateVisit(v.id, { customer_id: cust.id })
+      const i = visits.findIndex(x => x.id === v.id); if (i >= 0) visits[i] = nv
     } catch (e) { console.error(e) }
-    document.getElementById('cc').textContent = customers.length
-    renderVisitList(); renderCustList('')
-    toast(v.customer_name + ' masuk database customer!')
-  } catch (e) { toast('Gagal: ' + e.message, false) }
+  }
+  renderKanvasList(); renderVisitList()
 }
 
 async function delVisit(id) {
@@ -2225,6 +2281,7 @@ async function saveNewCust() {
     })
     customers.unshift(c)
     toast('Customer tersimpan!')
+    await linkKanvasVisits(c)
     renderCustList('')
     document.getElementById('cc').textContent = customers.length
     // Reset form
@@ -2262,6 +2319,7 @@ function renderCustList(q) {
     </div>`
     return expandedContactCustId === c.id ? row + renderContactPanel(c) : row
   }).join('') : `<div class="empty">Tidak ada customer.</div>`
+  renderKanvasList()
 }
 
 let editingCustId = null
