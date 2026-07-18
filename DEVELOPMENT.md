@@ -35,7 +35,7 @@ Dikerjakan sebelum pipeline karena pipeline akan menarik data dari quotation.
 - **Masking engineer:** engineer bisa buka shodan tapi kolom nilai disembunyikan
 - **List "Perlu Follow-Up"** di pipeline: shodan/pipeline tanpa update > **2 minggu** otomatis masuk list ini (in-app, tanpa integrasi eksternal — cepat jadi)
 
-## FASE 4 — Visit / Kanvasing
+## FASE 4 — Visit / Kanvasing ✅ SELESAI (19 Jul 2026)
 - **Tipe visit:** online / onsite
 - **Latest FU** per visit (tanggal terakhir)
 - Update visit bisa meng-update Latest FU shodan/pipeline yang terkait (supaya reminder 2 minggu akurat)

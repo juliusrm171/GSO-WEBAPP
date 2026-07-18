@@ -133,6 +133,12 @@ export async function addVisit(visit) {
   return data
 }
 
+export async function updateVisit(id, fields) {
+  const { data, error } = await supabase.from('visits').update(fields).eq('id', id).select('*, profiles(name)').single()
+  if (error) throw error
+  return data
+}
+
 export async function deleteVisit(id) {
   const { error } = await supabase.from('visits').delete().eq('id', id)
   if (error) throw error

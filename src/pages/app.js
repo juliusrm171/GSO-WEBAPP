@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getProfiles, updateProfile, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
 import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -676,7 +676,7 @@ export async function renderApp(container, user, logout) {
         </div>
         <div class="fld" style="position:relative;"><label>Kontak Person</label><input id="v-contact" autocomplete="off" placeholder="Klik untuk pilih kontak..." onfocus="showVCtDrop()" onblur="hideVCtDrop()"><div id="v-ct-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;max-height:180px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,.08);"></div></div>
       </div>
-      <div class="g2" style="margin-bottom:8px;">
+      <div class="g3" style="margin-bottom:8px;">
         <div class="fld"><label>Tujuan Visit</label>
           <select id="v-purpose">
             <option>Follow Up Penawaran</option>
@@ -685,11 +685,23 @@ export async function renderApp(container, user, logout) {
             <option>Demo / Trial</option>
             <option>Penagihan</option>
             <option>After Sales / Support</option>
+            <option>Kanvasing</option>
             <option>Lainnya</option>
           </select>
         </div>
-        <div class="fld"><label>Catatan Hasil Visit</label><input id="v-notes" placeholder="Hasil pembicaraan, next step..."></div>
+        <div class="fld"><label>Tipe Visit</label>
+          <select id="v-type">
+            <option value="onsite">🏢 Onsite</option>
+            <option value="online">💻 Online</option>
+          </select>
+        </div>
+        <div class="fld"><label>Terkait Shodan / Penawaran (opsional)</label>
+          <select id="v-related" title="FU terakhir shodan/penawaran ini akan otomatis terupdate ke tanggal visit">
+            <option value="">— Tidak terkait —</option>
+          </select>
+        </div>
       </div>
+      <div class="fld" style="margin-bottom:8px;"><label>Catatan Hasil Visit</label><input id="v-notes" placeholder="Hasil pembicaraan, next step..."></div>
       <button class="bp" style="padding:8px 16px;font-size:12px;" id="btn-save-visit" onclick="saveVisit()">💾 Simpan Visit</button>
     </div>
     <div class="card">
@@ -893,7 +905,8 @@ export async function renderApp(container, user, logout) {
     switchDbTab,
     openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo,
     updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
-    shCustChange, showShCtDrop, hideShCtDrop, pickShCt
+    shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
+    vRelatedFill, custFromVisit
   })
 }
 
@@ -1389,6 +1402,7 @@ function renderVisits() {
   // Set default date to today
   const dateEl = document.getElementById('v-date')
   if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10)
+  vRelatedFill()
 
   const targetEl = document.getElementById('visit-target')
   if (targetEl) targetEl.value = visitTarget
@@ -1471,13 +1485,20 @@ function renderVisitList() {
   el.innerHTML = filtered.length ? filtered.map(v => {
     const salesName = v.profiles?.name || v.sales_name || '-'
     const mine = v.created_by === currentUser?.id
+    const inDb = v.customer_id || customers.some(c => (c.company || '').toLowerCase() === (v.customer_name || '').toLowerCase())
+    const rel = v.related_type === 'shodan' ? shodans.find(s => s.id === v.related_id) : (v.related_type === 'pipeline' ? pipeline.find(h => h.id === v.related_id) : null)
+    const relLabel = rel ? (v.related_type === 'shodan' ? '📥 ' + (rel.title || '') : '📄 ' + (rel.qo_number || '')) : ''
     return `<div class="visit-row">
       <div class="visit-date">${fmtD(v.visit_date)}</div>
       <div class="visit-info">
-        <div class="visit-cust">${v.customer_name}${v.contact ? ' · ' + v.contact : ''}</div>
-        <div class="visit-meta">${v.purpose || ''} · ${salesName}</div>
+        <div class="visit-cust">${v.customer_name}${v.contact ? ' · ' + v.contact : ''}
+          <span class="badge" style="font-size:9px;background:${v.visit_type === 'online' ? '#e0f2fe' : '#dcfce7'};color:${v.visit_type === 'online' ? '#0369a1' : '#166534'};">${v.visit_type === 'online' ? '💻 Online' : '🏢 Onsite'}</span>
+          ${!inDb ? '<span class="badge" style="font-size:9px;background:#fef3c7;color:#92400e;">KANVASING — belum di database</span>' : ''}
+        </div>
+        <div class="visit-meta">${v.purpose || ''} · ${salesName}${relLabel ? ' · ' + relLabel : ''}</div>
         ${v.notes ? `<div class="visit-notes">${v.notes}</div>` : ''}
       </div>
+      ${!inDb && isAdmin() ? `<button class="bxs" style="flex-shrink:0;" onclick="custFromVisit('${v.id}')">➕ Jadikan Customer</button>` : ''}
       ${(mine || isAdmin()) ? `<button class="bdel" onclick="delVisit('${v.id}')">🗑</button>` : ''}
     </div>`
   }).join('') : '<div class="empty">Belum ada visit tercatat.</div>'
@@ -1503,6 +1524,24 @@ function vCustPick(id) {
   document.getElementById('v-cust').value = c.company || ''
   document.getElementById('v-contact').value = ''
   document.getElementById('v-cust-drop').style.display = 'none'
+  vRelatedFill()
+}
+
+// Dropdown "Terkait Shodan / Penawaran" — item milik customer terpilih ditampilkan duluan
+function vRelatedFill() {
+  const sel = document.getElementById('v-related'); if (!sel) return
+  const custName = (gv('v-cust') || '').toLowerCase().trim()
+  const opts = []
+  shodans.filter(s => s.status === 'Open').forEach(s => {
+    opts.push({ v: 's:' + s.id, t: '📥 ' + (s.title || '-') + ' · ' + (s.customer_name || '-'), match: (s.customer_name || '').toLowerCase() === custName })
+  })
+  pipeline.filter(h => ['Open', 'Nego', 'On Hold'].includes(h.status)).forEach(h => {
+    opts.push({ v: 'q:' + h.id, t: '📄 ' + (h.qo_number || '-') + ' · ' + (h.customer_snapshot?.company || '-'), match: (h.customer_snapshot?.company || '').toLowerCase() === custName })
+  })
+  opts.sort((a, b) => (b.match ? 1 : 0) - (a.match ? 1 : 0))
+  const cur = sel.value
+  sel.innerHTML = '<option value="">— Tidak terkait —</option>' + opts.map(o => `<option value="${o.v}"${o.match ? ' style="font-weight:600;"' : ''}>${o.t}</option>`).join('')
+  if ([...sel.options].some(x => x.value === cur)) sel.value = cur
 }
 
 function showVCtDrop() {
@@ -1534,24 +1573,60 @@ async function saveVisit() {
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Menyimpan...'
   try {
     const myName = profiles.find(p => p.id === currentUser?.id)?.name || (currentUser?.email || '').split('@')[0]
+    const vDate = document.getElementById('v-date').value || new Date().toISOString().slice(0, 10)
+    const rel = gv('v-related')
     const v = await addVisit({
-      visit_date: document.getElementById('v-date').value || new Date().toISOString().slice(0, 10),
+      visit_date: vDate,
       customer_id: vSelectedCustId,
       customer_name: custName,
       contact: document.getElementById('v-contact').value,
       purpose: document.getElementById('v-purpose').value,
+      visit_type: gv('v-type') || 'onsite',
+      related_type: rel ? (rel.startsWith('s:') ? 'shodan' : 'pipeline') : null,
+      related_id: rel ? rel.slice(2) : null,
       notes: document.getElementById('v-notes').value,
       sales_name: myName
     })
     visits.unshift({ ...v, profiles: { name: myName } })
-    toast('Visit tersimpan!')
+    // Auto-update FU terakhir shodan/penawaran terkait ke tanggal visit
+    if (rel) {
+      try {
+        if (rel.startsWith('s:')) {
+          const s = await updateShodan(rel.slice(2), { last_fu: vDate })
+          const i = shodans.findIndex(x => x.id === s.id); if (i >= 0) shodans[i] = s
+        } else {
+          await updateQuotationFields(rel.slice(2), { last_fu: vDate })
+          const h = pipeline.find(x => x.id === rel.slice(2)); if (h) h.last_fu = vDate
+        }
+        toast('Visit tersimpan + FU terakhir terupdate!')
+      } catch (e) { toast('Visit tersimpan, tapi update FU gagal: ' + e.message, false) }
+    } else toast('Visit tersimpan!')
     document.getElementById('v-cust').value = ''
     document.getElementById('v-contact').value = ''
     document.getElementById('v-notes').value = ''
+    document.getElementById('v-related').value = ''
     vSelectedCustId = null
-    renderVisitStats(); renderVisitMonthly(); renderVisitList()
+    renderVisitStats(); renderVisitMonthly(); renderVisitList(); vRelatedFill()
   } catch (e) { toast('Gagal: ' + e.message, false) }
   btn.disabled = false; btn.innerHTML = '💾 Simpan Visit'
+}
+
+// Kanvasing → masuk database customer (hanya admin/super admin)
+async function custFromVisit(visitId) {
+  if (!guardAdmin()) return
+  const v = visits.find(x => x.id === visitId); if (!v) return
+  if (!confirm(`Tambahkan "${v.customer_name}" ke database customer?`)) return
+  try {
+    const c = await upsertCustomer({ company: v.customer_name, contact: v.contact || '', customer_type: 'PT', industry: 'Hasil kanvasing' })
+    if (!customers.find(x => x.id === c.id)) customers.unshift(c)
+    try {
+      const nv = await updateVisit(visitId, { customer_id: c.id })
+      const i = visits.findIndex(x => x.id === visitId); if (i >= 0) visits[i] = nv
+    } catch (e) { console.error(e) }
+    document.getElementById('cc').textContent = customers.length
+    renderVisitList(); renderCustList('')
+    toast(v.customer_name + ' masuk database customer!')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
 async function delVisit(id) {
