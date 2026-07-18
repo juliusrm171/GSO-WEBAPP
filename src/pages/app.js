@@ -644,27 +644,10 @@ export async function renderApp(container, user, logout) {
         <div class="fld"><label>Tanggal FU Terakhir</label><input id="sh-fu" type="date"></div>
         <div class="fld"><label>Catatan</label><input id="sh-notes"></div>
       </div>
-      <button class="bp" style="padding:7px 14px;font-size:12px;" onclick="saveShodan()">💾 Simpan Shodan</button>
-    </div>
-    <div class="card">
-      <div style="display:flex;gap:7px;margin-bottom:.7rem;flex-wrap:wrap;">
-        <input id="sh-q" placeholder="Cari judul, customer..." style="flex:1;padding:7px 10px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" oninput="renderShodan()">
-        <select id="sh-f" style="padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" onchange="renderShodan()">
-          <option value="">Semua status</option>
-          <option>Open</option><option>Penawaran</option><option>Won</option><option>Lost</option>
-        </select>
-        <button class="bs" style="padding:7px 11px;font-size:11px;" onclick="loadShodans().then(renderShodan)">↻ Refresh</button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="bp" style="padding:7px 14px;font-size:12px;" onclick="saveShodan()">💾 Simpan Shodan</button>
+        <span style="font-size:11px;color:#94a3b8;">Shodan yang tersimpan tampil menyatu di tab <b>Pipeline</b> (baris kuning).</span>
       </div>
-      <div class="tblwrap"><table class="piptbl">
-        <thead><tr>
-          <th style="width:80px;">Tanggal</th><th style="min-width:150px;">Judul / Inquiry</th>
-          <th style="min-width:120px;">Customer</th><th>Sales</th>
-          <th style="width:110px;">Est. Value</th><th style="width:105px;">FU Terakhir</th>
-          <th style="width:105px;">Status</th><th style="width:110px;"></th>
-        </tr></thead>
-        <tbody id="sh-bd"></tbody>
-      </table></div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:5px;" id="sh-ct"></div>
     </div>
     <datalist id="cust-dl"></datalist>
   </div>
@@ -1695,7 +1678,7 @@ function renderPip() {
   // Populate sales filter dropdown dynamically with unique sales names
   const salesSelect = document.getElementById('pip-sales')
   if (salesSelect) {
-    const uniqueSales = [...new Set(pipeline.map(h => h.profiles?.name || h.sales_name).filter(Boolean))].sort()
+    const uniqueSales = [...new Set([...pipeline.map(h => h.profiles?.name || h.sales_name), ...shodans.map(s => s.profiles?.name)].filter(Boolean))].sort()
     const currentVal = salesSelect.value || 'all'
     const optsHtml = '<option value="all">Semua Sales</option>' + uniqueSales.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('')
     if (salesSelect.innerHTML !== optsHtml) {
@@ -1709,22 +1692,56 @@ function renderPip() {
   const sf = document.getElementById('pip-sales')?.value || 'all'
 
   const filtered = pipeline.filter(h => {
-    const matchQ = !q || ((h.qo_number || '') + (h.customer_snapshot?.company || '') + (h.sales_name || '')).toLowerCase().includes(q)
+    const matchQ = !q || ((h.qo_number || '') + (h.title || '') + (h.customer_snapshot?.company || '') + (h.sales_name || '')).toLowerCase().includes(q)
     const matchF = !f || h.status === f
     const salesName = h.profiles?.name || h.sales_name || ''
     const matchS = sf === 'all' || salesName === sf
     return matchQ && matchF && matchS
   })
 
+  // Shodan (inquiry yang belum jadi penawaran) ikut tampil di pipeline
+  const SH_MAP = { Open: 'Open', Won: 'Closed - Won', Lost: 'Closed - Lost' }
+  const shFiltered = shodans.filter(s => {
+    if (s.status === 'Penawaran') return false
+    const sName = s.profiles?.name || ''
+    const matchQ = !q || ((s.title || '') + (s.customer_name || '') + sName).toLowerCase().includes(q)
+    const matchF = !f || SH_MAP[s.status] === f
+    const matchS = sf === 'all' || sName === sf
+    return matchQ && matchF && matchS
+  })
+
   const stats = { Open: 0, Nego: 0, 'On Hold': 0, 'Closed - Won': 0, 'Closed - Lost': 0 }
   const vals = { ...stats }
   filtered.forEach(h => { if (h.status in stats) { stats[h.status]++; vals[h.status] += (h.grand_total || 0) } })
+  shFiltered.forEach(s => { const m = SH_MAP[s.status]; if (m in stats) { stats[m]++; vals[m] += (+s.est_value || 0) } })
 
   const sg = document.getElementById('sg')
   if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">${canSeeVal() ? 'Rp ' + ((vals[s] || 0) / 1e6).toFixed(0) + 'M' : 'Rp •••'}</div></div>`).join('')
 
   const bd = document.getElementById('pip-bd'); if (!bd) return
-  bd.innerHTML = filtered.map(h => {
+
+  const merged = [
+    ...filtered.map(h => ({ type: 'q', d: h.date || h.created_at, row: h })),
+    ...shFiltered.map(s => ({ type: 's', d: s.created_at, row: s }))
+  ].sort((a, b) => new Date(b.d || 0) - new Date(a.d || 0))
+
+  bd.innerHTML = merged.map(m => {
+    if (m.type === 's') {
+      const s = m.row
+      const editable = canEditShodan(s)
+      const isMe = s.created_by === currentUser?.id
+      return `<tr style="background:#fffbeb;">
+        <td style="white-space:nowrap;"><span class="badge" style="background:#fef3c7;color:#92400e;">SHODAN</span>${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
+        <td style="white-space:nowrap;font-size:10px;">${s.created_at ? new Date(s.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
+        <td style="font-size:11px;color:#64748b;">${s.profiles?.name || '-'}</td>
+        <td>${s.customer_name || '-'}${s.contact ? `<div style="font-size:10px;color:#94a3b8;">${s.contact}</div>` : ''}</td>
+        <td style="color:#64748b;font-size:11px;">${s.title || '-'}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${s.notes}</div>` : ''}${canQuote() && s.status === 'Open' ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="shodanToQuo('${s.id}')">→ Quotation</button>` : ''}</td>
+        <td style="text-align:right;font-weight:600;white-space:nowrap;color:#92400e;">${fmt(+s.est_value || 0)}</td>
+        <td><input type="date" value="${s.last_fu || ''}" onchange="updShFU('${s.id}',this.value)" ${editable ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
+        <td>${editable ? `<select onchange="updShStatus('${s.id}',this.value)">${['Open', 'Won', 'Lost'].map(x => `<option${s.status === x ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${s.status}</span>`}${s.status === 'Lost' && s.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${s.lost_reason}</div>` : ''}${editable ? ` <button class="bdel" style="font-size:10px;" onclick="delShodan('${s.id}')">🗑</button>` : ''}</td>
+      </tr>`
+    }
+    const h = m.row
     const cust = h.customer_snapshot || {}
     const desc = h.title || (h.items || []).filter(r => r.t === 'i').map(r => r.name).join(', ').slice(0, 50)
     const salesName = h.profiles?.name || h.sales_name || '-'
@@ -1742,7 +1759,7 @@ function renderPip() {
   }).join('') || `<tr><td colspan="8" class="empty">Tidak ada data.</td></tr>`
 
   const ct = document.getElementById('pip-ct')
-  if (ct) ct.textContent = filtered.length + ' dari ' + pipeline.length + ' penawaran'
+  if (ct) ct.textContent = merged.length + ' dari ' + (pipeline.length + shodans.filter(s => s.status !== 'Penawaran').length) + ' penawaran & shodan'
   renderFuAlerts()
 }
 
@@ -1950,7 +1967,7 @@ async function saveShodan() {
     })
     shodans.unshift(s)
     ;['sh-title', 'sh-cust', 'sh-contact', 'sh-val', 'sh-fu', 'sh-notes'].forEach(id => document.getElementById(id).value = '')
-    renderShodan(); toast('Shodan tersimpan!')
+    toast('Shodan tersimpan! Lihat di tab Pipeline'); nav('pipeline')
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
@@ -2028,7 +2045,7 @@ async function updShStatus(id, val) {
   try {
     const s = await updateShodan(id, { status: val, ...(reason ? { lost_reason: reason } : {}) })
     const i = shodans.findIndex(x => x.id === id); if (i >= 0) shodans[i] = s
-    renderShodan(); toast('Status shodan: ' + val)
+    renderPip(); toast('Status shodan: ' + val)
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
@@ -2045,7 +2062,7 @@ async function delShodan(id) {
   try {
     await deleteShodan(id)
     shodans = shodans.filter(x => x.id !== id)
-    renderShodan(); toast('Shodan dihapus')
+    renderPip(); toast('Shodan dihapus')
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
