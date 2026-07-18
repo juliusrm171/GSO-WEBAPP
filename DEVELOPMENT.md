@@ -18,7 +18,7 @@ Semua fitur lain bergantung pada siapa boleh lihat/edit apa, jadi ini paling awa
 - **Profile user:** halaman profil (nama, inisial untuk nomor quotation, email, foto)
 - *Open: "direktur" pakai role super_admin atau role terpisah? "admin gudang" (stock) = role admin atau role baru?*
 
-## FASE 2 — Quotation Upgrade
+## FASE 2 — Quotation Upgrade ✅ SELESAI (18 Jul 2026, kecuali gambar part — nyusul bersama Fase 8)
 Dikerjakan sebelum pipeline karena pipeline akan menarik data dari quotation.
 
 - **Judul quotation (standard baru):** setiap quotation diberi judul untuk tracking project. Fallback kalau kosong: ambil part number / description item paling atas

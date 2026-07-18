@@ -168,22 +168,34 @@ export function generatePDF(quotation) {
   y = boxTop + Math.max(leftFinalH, rightFinalH) + 5
 
   // ===== ITEMS TABLE =====
+  // Grupping bundle: item setelah baris grup di-sum ke grup; harga per item tidak ditampilkan
+  let curG = null
+  const gSums = {}, inGroup = new Set()
+  items.forEach(r => {
+    if (r.t === 'g') { curG = r.id; gSums[curG] = 0 }
+    else if (r.t === 'i' && curG !== null) { gSums[curG] += calcItem(r); inGroup.add(r.id) }
+  })
+
   let nc = 0
   const body = []
   items.forEach(r => {
     if (r.t === 'g') {
-      body.push([{ content: r.label || '', colSpan: 7, styles: { fontStyle: 'bold', fillColor: [235, 238, 245], halign: 'center' } }])
+      body.push([
+        { content: r.label || '', colSpan: 6, styles: { fontStyle: 'bold', fillColor: [235, 238, 245] } },
+        { content: fmt(gSums[r.id] || 0), styles: { fontStyle: 'bold', fillColor: [235, 238, 245], halign: 'right' } }
+      ])
     } else if (r.t === 'n') {
       body.push([{ content: r.text || '', colSpan: 7, styles: { textColor: [120, 120, 120], fontSize: 7.5 } }])
     } else if (r.t === 'i') {
       nc++
+      const hide = inGroup.has(r.id)
       body.push([
         nc, r.part || '',
         { content: r.name || '', styles: { fontStyle: 'normal' } },
         '' + r.qty,
-        fmt(r.price || 0),
-        r.disc ? r.disc + '%' : '-',
-        fmt(calcItem(r))
+        hide ? '' : fmt(r.price || 0),
+        hide ? '' : (r.disc ? r.disc + '%' : '-'),
+        hide ? '' : fmt(calcItem(r))
       ])
       ;(r.subs || []).forEach((s, si) => {
         body.push([
@@ -271,6 +283,11 @@ export function generatePDF(quotation) {
   doc.setTextColor(220, 38, 38)
   doc.text('"Your Automation Partner"', pw / 2, footerY + 5, { align: 'center' })
 
-  const filename = (info.qo_number || 'quotation').replace(/[/\\]/g, '-') + '.pdf'
-  doc.save(filename)
+  // Nama file: [QUO NUMBER] - [ITEM DESCRIPTION] - [NAMA PT]
+  const firstItem = items.find(r => r.t === 'i')
+  const desc = info.title || firstItem?.part || firstItem?.name || 'Quotation'
+  const clean = s => String(s).replace(/[/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim()
+  const parts = [clean(info.qo_number || 'QUO'), clean(desc)]
+  if (customer.company) parts.push(clean(customer.company))
+  doc.save(parts.join(' - ') + '.pdf')
 }

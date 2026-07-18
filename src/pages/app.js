@@ -306,6 +306,32 @@ function fmtD(d) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-
 function gv(id) { return document.getElementById(id)?.value || '' }
 function calcR(r) { return r.qty * (r.price || 0) * (1 - (r.disc || 0) / 100) }
 
+// Nomor quotation: Q + inisial + YYYYMM + urutan (reset tiap bulan)
+function genQuoNo() {
+  const init = (myProfile?.initials || (myProfile?.name || currentUser?.email || 'XXX').replace(/[^A-Za-z]/g, '').slice(0, 3)).toUpperCase()
+  const now = new Date()
+  const prefix = 'Q' + init + now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0')
+  let maxSeq = 0
+  pipeline.forEach(h => {
+    const n = h.qo_number || ''
+    if (n.startsWith(prefix)) {
+      const s = parseInt(n.slice(prefix.length), 10)
+      if (!isNaN(s) && s > maxSeq) maxSeq = s
+    }
+  })
+  return prefix + String(maxSeq + 1).padStart(2, '0')
+}
+
+// Grupping bundle: item setelah baris grup (sampai grup berikutnya) di-sum ke grup itu
+function computeGroups(rws) {
+  let cur = null; const sums = {}; const inGroup = new Set()
+  rws.forEach(r => {
+    if (r.t === 'g') { cur = r.id; sums[cur] = 0 }
+    else if (r.t === 'i' && cur !== null) { sums[cur] += calcR(r); inGroup.add(r.id) }
+  })
+  return { sums, inGroup }
+}
+
 function toast(msg, ok = true) {
   const t = document.getElementById('gso-toast')
   if (!t) return
@@ -377,8 +403,17 @@ export async function renderApp(container, user, logout) {
     </div>
     <div id="qp-info">
       <div class="card"><div class="chd">Info Quotation</div>
+        <div class="fld" style="margin-bottom:9px;">
+          <label>Judul Quotation (untuk tracking project — kosongkan jika hanya pembelian barang/jasa)</label>
+          <input id="f-title" placeholder="Contoh: Vision Inspection System Line 2 - PT ABC">
+        </div>
         <div class="g3" style="margin-bottom:9px;">
-          <div class="fld"><label>Quotation No.</label><input id="f-no" value="QJRM20260602"></div>
+          <div class="fld"><label>Quotation No.</label>
+            <div style="display:flex;gap:4px;">
+              <input id="f-no" style="flex:1;">
+              <button class="bxs" title="Generate ulang nomor" onclick="document.getElementById('f-no').value=genQuoNo()" style="flex-shrink:0;">⟳</button>
+            </div>
+          </div>
           <div class="fld"><label>Date</label><input id="f-date" type="date"></div>
           <div class="fld"><label>Price Valid Until</label><input id="f-valid" type="date"></div>
         </div>
@@ -805,6 +840,7 @@ export async function renderApp(container, user, logout) {
   await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts()])
   applyRoleUI()
   renderDashboard()
+  if (!gv('f-no')) document.getElementById('f-no').value = genQuoNo()
 
   document.getElementById('profile-overlay').addEventListener('click', e => {
     if (e.target === document.getElementById('profile-overlay')) closeProfile()
@@ -825,7 +861,7 @@ export async function renderApp(container, user, logout) {
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
     doPDF, doSaveQuo, doLogout: onLogout,
     switchDbTab,
-    openProfile, closeProfile, saveMyProfile, chgUserRole
+    openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo
   })
 }
 
@@ -1034,8 +1070,9 @@ function us(pid, sid, v) { const p = rows.find(r => r.id === pid); if (p) { cons
 
 function renderRows() {
   let nc = 0
+  const gInfo = computeGroups(rows)
   document.getElementById('ibd').innerHTML = rows.map(r => {
-    if (r.t === 'g') return `<tr><td colspan="2"></td><td colspan="6"><input value="${r.label || ''}" oninput="uf(${r.id},'label',this.value)" placeholder="Nama grup..." style="width:100%;font-weight:600;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-size:12px;font-family:inherit;"></td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
+    if (r.t === 'g') return `<tr style="background:#f1f5f9;"><td colspan="2"></td><td colspan="5"><input value="${r.label || ''}" oninput="uf(${r.id},'label',this.value)" placeholder="Nama grup / bundle..." style="width:100%;font-weight:600;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-size:12px;font-family:inherit;"></td><td style="text-align:right;font-weight:700;color:#002060;font-size:11px;padding-right:5px;" id="gt${r.id}">${fmt(gInfo.sums[r.id] || 0)}</td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
     if (r.t === 'n') return `<tr><td colspan="8"><textarea placeholder="Catatan..." oninput="uf(${r.id},'text',this.value)" style="width:100%;padding:3px 5px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:26px;">${r.text || ''}</textarea></td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
     nc++
     const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#94a3b8;font-size:10px;">${nc}.${si + 1}</td><td></td><td colspan="6"><textarea oninput="us(${r.id},${s.id},this.value)" placeholder="Sub-item..." style="width:100%;padding:3px 4px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:24px;">${s.text || ''}</textarea></td><td><button class="bdel" onclick="delS(${r.id},${s.id})">✕</button></td></tr>`).join('')
@@ -1066,6 +1103,8 @@ function recalc() {
   document.getElementById('s-vat').textContent = fmt(vat)
   document.getElementById('s-grand').textContent = fmt(grand)
   rows.filter(r => r.t === 'i').forEach(r => { const el = document.getElementById('rt' + r.id); if (el) el.textContent = fmt(calcR(r)) })
+  const gInfo = computeGroups(rows)
+  Object.entries(gInfo.sums).forEach(([gid, s]) => { const el = document.getElementById('gt' + gid); if (el) el.textContent = fmt(s) })
 }
 
 function renderPrev() {
@@ -1088,11 +1127,13 @@ function renderPrev() {
   document.getElementById('pv-engineer').textContent = gv('f-eng') || '-'
 
   let nc = 0
+  const gInfo = computeGroups(rows)
   document.getElementById('pv-body').innerHTML = rows.map(r => {
-    if (r.t === 'g') return `<tr class="grp"><td colspan="7">${r.label || ''}</td></tr>`
+    if (r.t === 'g') return `<tr class="grp"><td colspan="6">${r.label || ''}</td><td class="r" style="font-weight:700;">${fmt(gInfo.sums[r.id] || 0)}</td></tr>`
     if (r.t === 'n') return `<tr><td colspan="7" style="color:#888;font-size:9px;">${(r.text || '').replace(/\n/g, '<br>')}</td></tr>`
     nc++
     const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#aaa;">${nc}.${si + 1}</td><td></td><td colspan="5">${s.text || ''}</td></tr>`).join('')
+    if (gInfo.inGroup.has(r.id)) return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}</td><td class="r">${r.qty}</td><td class="r"></td><td class="r"></td><td class="r"></td></tr>${subs}`
     return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}</td><td class="r">${r.qty}</td><td class="r">${fmt(r.price || 0)}</td><td class="r">${r.disc ? r.disc + '%' : '-'}</td><td class="r">${fmt(calcR(r))}</td></tr>${subs}`
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:8px;">Belum ada item</td></tr>'
 
@@ -1105,7 +1146,7 @@ function doPDF() {
   if (!canQuote()) { toast('Engineer tidak bisa membuat quotation', false); return }
   const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
   generatePDF({
-    info: { qo_number: gv('f-no'), date: gv('f-date'), valid_until: gv('f-valid'), sales_name: gv('f-sales'), sales_mobile: gv('f-mobile'), payment_terms: gv('f-pay'), delivery_terms: gv('f-del'), notes: gv('f-notes'), vat_pct: vp, discount_pct: dp },
+    info: { qo_number: gv('f-no'), title: gv('f-title'), date: gv('f-date'), valid_until: gv('f-valid'), sales_name: gv('f-sales'), sales_mobile: gv('f-mobile'), payment_terms: gv('f-pay'), delivery_terms: gv('f-del'), notes: gv('f-notes'), vat_pct: vp, discount_pct: dp, engineer: gv('f-eng') },
     customer: { company: gv('f-co'), contact: gv('f-ct'), tel: gv('f-tel'), email: gv('f-em'), address: gv('f-addr') },
     items: rows
   })
@@ -1121,7 +1162,7 @@ async function doSaveQuo() {
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'
   try {
     await saveQuotation({
-      qo_number: gv('f-no'), date: gv('f-date') || null, valid_until: gv('f-valid') || null,
+      qo_number: gv('f-no'), title: gv('f-title') || null, date: gv('f-date') || null, valid_until: gv('f-valid') || null,
       customer_snapshot: { company: gv('f-co'), contact: gv('f-ct'), tel: gv('f-tel'), email: gv('f-em'), address: gv('f-addr') },
       items: rows, vat_pct: vp, discount_pct: dp, grand_total: sub + vat,
       payment_terms: gv('f-pay'), delivery_terms: gv('f-del'), notes: gv('f-notes'),
@@ -1621,7 +1662,7 @@ function renderPip() {
   const bd = document.getElementById('pip-bd'); if (!bd) return
   bd.innerHTML = filtered.map(h => {
     const cust = h.customer_snapshot || {}
-    const desc = (h.items || []).filter(r => r.t === 'i').map(r => r.name).join(', ').slice(0, 50)
+    const desc = h.title || (h.items || []).filter(r => r.t === 'i').map(r => r.name).join(', ').slice(0, 50)
     const salesName = h.profiles?.name || h.sales_name || '-'
     const isMe = h.created_by === currentUser?.id
     return `<tr>
