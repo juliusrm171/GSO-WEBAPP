@@ -610,7 +610,9 @@ export async function renderApp(container, user, logout) {
       <div class="tblwrap">
         <table class="pltbl">
           <thead><tr>
-            <th style="width:26px;">#</th><th style="min-width:220px;">Model / Part Number</th>
+            <th style="width:26px;">#</th><th style="width:48px;">Foto</th>
+            <th style="min-width:150px;">Part Number</th>
+            <th style="min-width:190px;">Description</th>
             <th style="width:130px;">Kategori</th>
             <th style="width:135px;" class="r">Harga (Rp)</th>
             <th style="width:105px;"></th>
@@ -996,7 +998,8 @@ export async function renderApp(container, user, logout) {
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
     vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList,
     loadPOs, renderPO, savePO, delPO, renderTargets, saveTargetVal, saveVisitTargetVal,
-    dashSetMode, dashSetYear, openMpop, closeMpop, lbShift, renderSalesChart, renderLeaderboard
+    dashSetMode, dashSetYear, openMpop, closeMpop, lbShift, renderSalesChart, renderLeaderboard,
+    showImgPop
   })
 }
 
@@ -2008,18 +2011,19 @@ function plSearch() {
 function renderPL() {
   const start = (plPg - 1) * PER, slice = plF.slice(start, start + PER)
   const body = document.getElementById('pl-body'); if (!body) return
-  body.innerHTML = slice.length ? slice.map(([name, part, price, catI], i) => {
-    const spec = name !== part ? name.replace(part, '').replace(/^\s*\[/, '[').trim() : ''
+  body.innerHTML = slice.length ? slice.map(([name, part, price, catI, img], i) => {
     return `<tr>
       <td style="color:#94a3b8;font-size:11px;">${start + i + 1}</td>
-      <td><div style="font-weight:500;font-size:12px;">${part}</div>${spec ? `<div style="font-size:10px;color:#94a3b8;">${spec}</div>` : ''}</td>
+      <td style="width:44px;">${img ? `<img src="/img/products/${img}" loading="lazy" style="height:36px;max-width:44px;object-fit:contain;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('/img/products/${img}','${part.replace(/'/g, "\\'")}')">` : ''}</td>
+      <td style="font-weight:600;font-size:12px;white-space:nowrap;">${part}</td>
+      <td style="font-size:11px;color:#64748b;">${name && name !== part ? name : '—'}</td>
       <td><span class="badge">${PL_CATS[catI]}</span></td>
       <td class="pc">${fmtPL(price)}</td>
       <td style="display:flex;gap:4px;">
         ${canQuote() ? `<button class="bxs" onclick="addFromPL('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price})">+ Quote</button>` : ''}
         ${isAdmin() ? `<button class="bxs" style="border-color:#e2e8f0;color:#64748b;" onclick="saveStarPL('${part.replace(/'/g, "\\'")}',${price},'${PL_CATS[catI]}')">★</button>` : ''}
       </td></tr>`
-  }).join('') : `<tr><td colspan="5" class="empty">Tidak ada produk cocok.</td></tr>`
+  }).join('') : `<tr><td colspan="7" class="empty">Tidak ada produk cocok.</td></tr>`
   const total = Math.ceil(plF.length / PER)
   const pg = document.getElementById('pl-pg'); if (!pg) return
   pg.innerHTML = total <= 1 ? '' : (plPg > 1 ? `<button onclick="plGo(${plPg - 1})">← Prev</button>` : '') + `<span style="color:#94a3b8;">Hal ${plPg} / ${total}</span>` + (plPg < total ? `<button onclick="plGo(${plPg + 1})">Next →</button>` : '')
@@ -2057,7 +2061,7 @@ function mSearch() {
 function renderM() {
   const start = (mPg - 1) * PER, slice = mF.slice(start, start + PER)
   document.getElementById('m-bd').innerHTML = slice.length ? slice.map(([name, part, price, catI]) => {
-    const spec = name !== part ? name.replace(part, '').replace(/^\s*\[/, '[').trim() : ''
+    const spec = name && name !== part ? name : ''
     return `<tr style="border-bottom:1px solid #f1f5f9;">
       <td style="padding:5px 7px;"><div style="font-weight:500;font-size:11px;">${part}</div>${spec ? `<div style="font-size:10px;color:#94a3b8;">${spec}</div>` : ''}</td>
       <td style="padding:5px 7px;"><span class="badge" style="font-size:9px;">${PL_CATS[catI]}</span></td>
@@ -2414,6 +2418,22 @@ function openMpop(ym) {
   document.getElementById('mpop-overlay').classList.add('on')
 }
 function closeMpop() { document.getElementById('mpop-overlay').classList.remove('on') }
+
+// Popup gambar produk (pricelist)
+function showImgPop(src, title) {
+  let ov = document.getElementById('imgpop-overlay')
+  if (!ov) {
+    ov = document.createElement('div')
+    ov.id = 'imgpop-overlay'
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:900;display:flex;align-items:center;justify-content:center;cursor:zoom-out;'
+    ov.onclick = () => ov.style.display = 'none'
+    ov.innerHTML = '<div style="background:#fff;border-radius:12px;padding:14px;max-width:420px;text-align:center;"><img id="imgpop-img" style="max-width:380px;max-height:340px;object-fit:contain;"><div id="imgpop-title" style="font-size:12px;font-weight:600;color:#002060;margin-top:6px;"></div></div>'
+    document.body.appendChild(ov)
+  }
+  ov.querySelector('#imgpop-img').src = src
+  ov.querySelector('#imgpop-title').textContent = title || ''
+  ov.style.display = 'flex'
+}
 
 function lbShift(d) {
   const [y, m] = lbMonth.split('-').map(Number)
