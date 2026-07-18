@@ -178,6 +178,44 @@ export async function deleteShodan(id) {
   if (error) throw error
 }
 
+// PURCHASE ORDERS
+export async function getPOs() {
+  const { data, error } = await supabase
+    .from('purchase_orders')
+    .select('*, profiles!purchase_orders_sales_id_fkey(name)')
+    .order('po_date', { ascending: false })
+  if (error) throw error
+  return data
+}
+
+export async function addPO(po) {
+  const session = await getSession()
+  const payload = { ...po, created_by: session.user.id }
+  const { data, error } = await supabase.from('purchase_orders').insert(payload).select('*, profiles!purchase_orders_sales_id_fkey(name)').single()
+  if (error) throw error
+  return data
+}
+
+export async function deletePO(id) {
+  const { error } = await supabase.from('purchase_orders').delete().eq('id', id)
+  if (error) throw error
+}
+
+// SALES TARGETS
+export async function getTargets() {
+  const { data, error } = await supabase.from('sales_targets').select('*')
+  if (error) throw error
+  return data
+}
+
+export async function setTarget(sales_id, period, target) {
+  const { data, error } = await supabase.from('sales_targets')
+    .upsert({ sales_id, period, target }, { onConflict: 'sales_id,period' })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
 // SETTINGS
 export async function getSetting(key) {
   const { data, error } = await supabase.from('app_settings').select('value').eq('key', key).maybeSingle()

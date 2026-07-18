@@ -48,7 +48,7 @@ Dikerjakan setelah Fase 3-4 karena butuh data FU yang sudah stabil.
 - Teknis: Supabase Edge Function + pg_cron (cek harian); email via Resend/SMTP; calendar via Google Calendar API (perlu setup Google Cloud project + OAuth/service account — akan dipandu)
 - *Open: alamat email perusahaan yang dipakai?*
 
-## FASE 6 — PO & Target Sales
+## FASE 6 — PO & Target Sales ✅ SELESAI (19 Jul 2026)
 - **Input PO terpisah** (bukan dari pipeline): diinput admin sales — nomor PO, customer, sales, nilai, tanggal, link ke quotation (opsional)
 - **Target sales:** di-set admin/super admin saja, per sales per bulan, dalam Rupiah
 

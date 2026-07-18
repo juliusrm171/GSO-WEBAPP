@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
 import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -285,7 +285,7 @@ const FULL_LOGO_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAlgAAADlCAYAAACPrYleAAAKMWlDQ1BJQ
 
 let rows = [], ctr = 0, plF = PL_ITEMS.slice(), plPg = 1, plCat = ''
 let mF = PL_ITEMS.slice(), mPg = 1
-let customers = [], products = [], pipeline = [], profiles = [], visits = [], contacts = [], shodans = []
+let customers = [], products = [], pipeline = [], profiles = [], visits = [], contacts = [], shodans = [], pos = [], targets = []
 let visitTarget = 10
 let currentUser = null, onLogout = null
 let myRole = 'sales', myProfile = null
@@ -353,6 +353,7 @@ export async function renderApp(container, user, logout) {
     <div class="ntab" onclick="nav('pricelist')">💰 Pricelist</div>
     <div class="ntab" onclick="nav('pipeline')">📊 Pipeline</div>
     <div class="ntab" onclick="nav('shodan')">📥 Shodan</div>
+    <div class="ntab" onclick="nav('po')">🧾 PO</div>
     <div class="ntab" onclick="nav('visit')">📍 Visit</div>
     <div class="ntab" onclick="nav('database')">🗄 Database</div>
     <div class="nright">
@@ -652,6 +653,52 @@ export async function renderApp(container, user, logout) {
     <datalist id="cust-dl"></datalist>
   </div>
 
+  <!-- PO & TARGET -->
+  <div id="p-po" class="page">
+    <div class="sg" id="po-stats"></div>
+    <div class="card" id="po-form-card">
+      <div class="chd">🧾 Input PO Baru (khusus admin)</div>
+      <div class="g3" style="margin-bottom:8px;">
+        <div class="fld"><label>Nomor PO</label><input id="po-no" placeholder="PO-2026-001"></div>
+        <div class="fld"><label>Tanggal PO</label><input type="date" id="po-date"></div>
+        <div class="fld"><label>Customer</label><input id="po-cust" list="cust-dl" placeholder="Ketik nama customer..." autocomplete="off"></div>
+      </div>
+      <div class="g3" style="margin-bottom:8px;">
+        <div class="fld"><label>Sales</label><select id="po-sales-in"></select></div>
+        <div class="fld"><label>Nilai PO (Rp, sebelum VAT)</label><input id="po-amount" type="number"></div>
+        <div class="fld"><label>Quotation Terkait (opsional — otomatis jadi Closed - Won)</label><select id="po-quo"><option value="">— Tidak terkait —</option></select></div>
+      </div>
+      <div class="fld" style="margin-bottom:8px;"><label>Catatan</label><input id="po-notes"></div>
+      <button class="bp" style="padding:7px 14px;font-size:12px;" onclick="savePO()">💾 Simpan PO</button>
+    </div>
+    <div class="card">
+      <div style="display:flex;gap:7px;margin-bottom:.7rem;flex-wrap:wrap;align-items:center;">
+        <div class="chd" style="margin:0;flex:1;">Daftar PO</div>
+        <input type="month" id="po-month" onchange="renderPO()" style="padding:6px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;">
+        <select id="po-f-sales" onchange="renderPO()" style="padding:6px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;">
+          <option value="all">Semua Sales</option>
+        </select>
+        <button class="bs" style="padding:6px 11px;font-size:11px;" onclick="loadPOs().then(renderPO)">↻ Refresh</button>
+      </div>
+      <div class="tblwrap"><table class="piptbl">
+        <thead><tr>
+          <th style="width:110px;">PO No.</th><th style="width:85px;">Tanggal</th>
+          <th style="min-width:140px;">Customer</th><th>Sales</th>
+          <th style="width:125px;">Nilai (Rp)</th><th style="width:110px;">Quotation</th><th style="width:40px;"></th>
+        </tr></thead>
+        <tbody id="po-bd"></tbody>
+      </table></div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:5px;" id="po-ct"></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:.7rem;">
+        <div class="chd" style="margin:0;">🎯 Target Sales Bulanan</div>
+        <input type="month" id="tg-month" onchange="renderTargets()" style="padding:6px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;">
+      </div>
+      <div id="tg-list"></div>
+    </div>
+  </div>
+
   <!-- VISIT -->
   <div id="p-visit" class="page">
     <div class="sg" id="visit-stats"></div>
@@ -881,7 +928,7 @@ export async function renderApp(container, user, logout) {
   plSearch()
   renderRows()
 
-  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts(), loadShodans()])
+  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts(), loadShodans(), loadPOs(), loadTargets()])
   applyRoleUI()
   renderDashboard()
   if (!gv('f-no')) document.getElementById('f-no').value = genQuoNo()
@@ -910,7 +957,8 @@ export async function renderApp(container, user, logout) {
     openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo,
     updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
-    vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList
+    vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList,
+    loadPOs, renderPO, savePO, delPO, renderTargets, saveTargetVal
   })
 }
 
@@ -927,9 +975,14 @@ function applyRoleUI() {
   // Engineer tetap bisa lihat shodan di Pipeline, tapi tanpa nominal.
   if (!canQuote()) {
     document.querySelectorAll('nav .ntab').forEach(t => {
-      if (['Quotation', 'Pricelist', 'Shodan'].some(x => t.textContent.includes(x))) t.style.display = 'none'
+      if (['Quotation', 'Pricelist', 'Shodan', 'PO'].some(x => t.textContent.includes(x))) t.style.display = 'none'
     })
     const sf = document.getElementById('shodan-form-card'); if (sf) sf.style.display = 'none'
+  }
+
+  // Non-admin: form input PO disembunyikan
+  if (!isAdmin()) {
+    const pf = document.getElementById('po-form-card'); if (pf) pf.style.display = 'none'
   }
 
   // Non-admin: sembunyikan tombol tulis database, export, dan kunci target visit
@@ -994,10 +1047,11 @@ function nav(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('on'))
   document.querySelectorAll('nav .ntab').forEach(b => b.classList.remove('on'))
   document.getElementById('p-' + name).classList.add('on')
-  const idx = ['dashboard', 'quotation', 'pricelist', 'pipeline', 'shodan', 'visit', 'database'].indexOf(name)
+  const idx = ['dashboard', 'quotation', 'pricelist', 'pipeline', 'shodan', 'po', 'visit', 'database'].indexOf(name)
   document.querySelectorAll('nav .ntab')[idx].classList.add('on')
   if (name === 'pipeline') renderPip()
   if (name === 'shodan') renderShodan()
+  if (name === 'po') renderPO()
   if (name === 'dashboard') renderDashboard()
   if (name === 'visit') renderVisits()
   if (name === 'database') { renderCustList(''); renderProdList('') }
@@ -1613,6 +1667,146 @@ async function saveVisit() {
     renderVisitStats(); renderVisitMonthly(); renderVisitList(); vRelatedFill()
   } catch (e) { toast('Gagal: ' + e.message, false) }
   btn.disabled = false; btn.innerHTML = '💾 Simpan Visit'
+}
+
+// ── PO & TARGET ──
+async function loadPOs() {
+  try { pos = await getPOs() } catch (e) { console.error(e) }
+}
+async function loadTargets() {
+  try { targets = await getTargets() } catch (e) { console.error(e) }
+}
+
+const curMonth = () => new Date().toISOString().slice(0, 7)
+const poSalesName = (p) => p.profiles?.name || profiles.find(x => x.id === p.sales_id)?.name || '-'
+
+function renderPO() {
+  const bd = document.getElementById('po-bd'); if (!bd) return
+
+  // Default bulan & isi dropdown sekali
+  const mEl = document.getElementById('po-month')
+  if (mEl && !mEl.value) mEl.value = curMonth()
+  const salesSel = document.getElementById('po-sales-in')
+  if (salesSel && !salesSel.options.length) {
+    salesSel.innerHTML = profiles.filter(p => p.role !== 'engineer').map(p => `<option value="${p.id}"${p.id === currentUser?.id ? ' selected' : ''}>${p.name || '-'}</option>`).join('')
+  }
+  const quoSel = document.getElementById('po-quo')
+  if (quoSel && quoSel.options.length <= 1) {
+    quoSel.innerHTML = '<option value="">— Tidak terkait —</option>' + pipeline
+      .filter(h => h.status !== 'Closed - Lost')
+      .map(h => `<option value="${h.id}">${h.qo_number || '-'} · ${(h.customer_snapshot?.company || '-')}</option>`).join('')
+  }
+  const fSel = document.getElementById('po-f-sales')
+  if (fSel) {
+    const names = [...new Set(pos.map(poSalesName).filter(x => x !== '-'))].sort()
+    const cur = fSel.value || 'all'
+    const html = '<option value="all">Semua Sales</option>' + names.map(n => `<option>${n}</option>`).join('')
+    if (fSel.innerHTML !== html) { fSel.innerHTML = html; fSel.value = names.includes(cur) || cur === 'all' ? cur : 'all' }
+  }
+
+  const month = mEl?.value || curMonth()
+  const sf = fSel?.value || 'all'
+  const filtered = pos.filter(p => (p.po_date || '').startsWith(month) && (sf === 'all' || poSalesName(p) === sf))
+
+  // Stats: bulan terpilih + tahun berjalan
+  const year = month.slice(0, 4)
+  const mTot = filtered.reduce((s, p) => s + (+p.amount || 0), 0)
+  const yPos = pos.filter(p => (p.po_date || '').startsWith(year))
+  const yTot = yPos.reduce((s, p) => s + (+p.amount || 0), 0)
+  const st = document.getElementById('po-stats')
+  if (st) st.innerHTML = `
+    <div class="sc"><div class="sn">${filtered.length}</div><div class="sl">PO bulan ${month}</div><div class="sv">${fmt(mTot)}</div></div>
+    <div class="sc"><div class="sn">${yPos.length}</div><div class="sl">PO tahun ${year}</div><div class="sv">${fmt(yTot)}</div></div>`
+
+  bd.innerHTML = filtered.map(p => {
+    const quo = p.quotation_id ? pipeline.find(h => h.id === p.quotation_id) : null
+    return `<tr>
+      <td style="font-weight:600;white-space:nowrap;">${p.po_number || '-'}</td>
+      <td style="white-space:nowrap;font-size:10px;">${fmtD(p.po_date)}</td>
+      <td>${p.customer_name || '-'}${p.notes ? `<div style="font-size:10px;color:#94a3b8;">${p.notes}</div>` : ''}</td>
+      <td style="font-size:11px;color:#64748b;">${poSalesName(p)}</td>
+      <td style="text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmt(+p.amount || 0)}</td>
+      <td style="font-size:10px;color:#64748b;">${quo ? quo.qo_number : '-'}</td>
+      <td>${isAdmin() ? `<button class="bdel" onclick="delPO('${p.id}')">🗑</button>` : ''}</td>
+    </tr>`
+  }).join('') || `<tr><td colspan="7" class="empty">Belum ada PO di bulan ini.</td></tr>`
+  const ct = document.getElementById('po-ct')
+  if (ct) ct.textContent = filtered.length + ' PO · total ' + fmt(mTot)
+
+  renderTargets()
+}
+
+async function savePO() {
+  if (!guardAdmin()) return
+  const no = gv('po-no').trim(), amount = +(gv('po-amount') || 0)
+  if (!no) { toast('Nomor PO wajib diisi', false); return }
+  if (!amount) { toast('Nilai PO wajib diisi', false); return }
+  try {
+    const p = await addPO({
+      po_number: no,
+      po_date: gv('po-date') || new Date().toISOString().slice(0, 10),
+      customer_name: gv('po-cust'),
+      sales_id: gv('po-sales-in') || null,
+      quotation_id: gv('po-quo') || null,
+      amount, notes: gv('po-notes')
+    })
+    pos.unshift(p)
+    // Quotation terkait otomatis Closed - Won
+    if (p.quotation_id) {
+      try {
+        await updateQuotationFields(p.quotation_id, { status: 'Closed - Won' })
+        const h = pipeline.find(x => x.id === p.quotation_id); if (h) h.status = 'Closed - Won'
+      } catch (e) { console.error(e) }
+    }
+    ;['po-no', 'po-cust', 'po-amount', 'po-notes'].forEach(id => document.getElementById(id).value = '')
+    document.getElementById('po-quo').value = ''
+    renderPO(); toast('PO tersimpan!')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function delPO(id) {
+  if (!guardAdmin()) return
+  if (!confirm('Hapus PO ini?')) return
+  try {
+    await deletePO(id)
+    pos = pos.filter(x => x.id !== id)
+    renderPO(); toast('PO dihapus')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+function renderTargets() {
+  const el = document.getElementById('tg-list'); if (!el) return
+  const mEl = document.getElementById('tg-month')
+  if (mEl && !mEl.value) mEl.value = document.getElementById('po-month')?.value || curMonth()
+  const period = mEl?.value || curMonth()
+  const team = profiles.filter(p => p.role !== 'engineer')
+  el.innerHTML = team.map(p => {
+    const t = targets.find(x => x.sales_id === p.id && x.period === period)
+    const tv = +(t?.target || 0)
+    const ach = pos.filter(x => x.sales_id === p.id && (x.po_date || '').startsWith(period)).reduce((s, x) => s + (+x.amount || 0), 0)
+    const pct = tv > 0 ? Math.round(ach / tv * 100) : 0
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9;font-size:12px;flex-wrap:wrap;">
+      <div style="width:140px;font-weight:600;">${p.name || '-'}</div>
+      <div style="display:flex;align-items:center;gap:5px;">Target:
+        ${isAdmin() ? `<input type="number" value="${tv || ''}" placeholder="0" onchange="saveTargetVal('${p.id}','${period}',this.value)" style="width:130px;padding:4px 7px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;text-align:right;">` : `<b>${fmt(tv)}</b>`}
+      </div>
+      <div>Achieve: <b style="color:#002060;">${fmt(ach)}</b></div>
+      <div style="flex:1;min-width:140px;display:flex;align-items:center;gap:6px;">
+        <div class="bar-track" style="flex:1;"><div style="position:absolute;left:0;top:0;bottom:0;width:${Math.min(pct, 100)}%;background:${pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#002060'};border-radius:9px;"></div></div>
+        <b style="color:${pct >= 100 ? '#16a34a' : '#64748b'};white-space:nowrap;">${tv > 0 ? pct + '%' : '—'}</b>
+      </div>
+    </div>`
+  }).join('') || '<div class="empty">Belum ada data sales.</div>'
+}
+
+async function saveTargetVal(salesId, period, val) {
+  if (!guardAdmin()) return
+  try {
+    const t = await setTarget(salesId, period, +(val || 0))
+    const i = targets.findIndex(x => x.sales_id === salesId && x.period === period)
+    if (i >= 0) targets[i] = t; else targets.push(t)
+    renderTargets(); toast('Target tersimpan')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
 // ── KANVASING → DATABASE (admin melengkapi detail lewat form di tab Database) ──
