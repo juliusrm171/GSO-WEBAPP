@@ -1,5 +1,5 @@
 import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
-import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
+import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
 const CSS = `<style>
@@ -586,16 +586,22 @@ export async function renderApp(container, user, logout) {
   <div id="p-pricelist" class="page">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.65rem;">
-        <div><div style="font-size:15px;font-weight:600;">Pricelist Hikrobot 2026 Q1</div>
+        <div><div style="font-size:15px;font-weight:600;">Pricelist 2026 Q1</div>
           <div style="font-size:11px;color:#64748b;">Kurs Rp 18.000/USD · <b>${PL_ITEMS.length.toLocaleString()}</b> produk</div>
         </div>
       </div>
       <div class="pl-bar">
         <input type="text" id="pl-q" placeholder="Cari model, spec (MV-ID2013, SC3016, IDH3000, 5MP, lighting, lens...)" oninput="plSearch()">
+        <select id="pl-brand" onchange="plSearch()">
+          <option value="">Semua Brand</option>
+          ${PL_BRANDS.map((b, i) => `<option value="${i}">${b}</option>`).join('')}
+        </select>
         <select id="pl-sort" onchange="plSearch()">
           <option value="">Relevansi</option>
           <option value="asc">Harga ↑</option>
           <option value="desc">Harga ↓</option>
+          <option value="resasc">Resolusi ↑</option>
+          <option value="resdesc">Resolusi ↓</option>
           <option value="az">A–Z</option>
         </select>
       </div>
@@ -1169,7 +1175,7 @@ function pickCt(id) {
 
 // ITEMS
 function aGrp() { rows.push({ id: ++ctr, t: 'g', label: 'ENGINEERING SERVICE' }); renderRows() }
-function aItem(name = '', part = '', qty = 1, unit = 'unit', price = 0, disc = 0) { rows.push({ id: ++ctr, t: 'i', name, part, qty, unit, price, disc, subs: [] }); renderRows(); recalc() }
+function aItem(name = '', part = '', qty = 1, unit = 'unit', price = 0, disc = 0, img = '') { rows.push({ id: ++ctr, t: 'i', name, part, qty, unit, price, disc, img, subs: [] }); renderRows(); recalc() }
 function aNote() { rows.push({ id: ++ctr, t: 'n', text: '' }); renderRows() }
 function delR(id) { rows = rows.filter(r => r.id !== id); rows.forEach(r => { if (r.subs) r.subs = r.subs.filter(s => s.id !== id) }); renderRows(); recalc() }
 function delS(pid, sid) { const p = rows.find(r => r.id === pid); if (p) p.subs = p.subs.filter(s => s.id !== sid); renderRows() }
@@ -1213,9 +1219,9 @@ function pickPart(rowId, partNo) {
   const p = PL_ITEMS.find(x => x[1] === partNo); if (!p) return
   const r = rows.find(x => x.id === rowId); if (!r) return
   r.part = p[1]
-  // Nama: pakai bagian deskripsi setelah "—" kalau ada, kalau tidak pakai full name
   r.name = p[0].includes('—') ? p[0].split('—')[1].trim() : p[0]
   r.price = p[2]
+  r.img = p[4] || ''
   recalc(); renderRows()
 }
 function us(pid, sid, v) { const p = rows.find(r => r.id === pid); if (p) { const s = p.subs.find(x => x.id === sid); if (s) s.text = v } }
@@ -1231,7 +1237,7 @@ function renderRows() {
     return `<tr>
       <td style="text-align:center;color:#94a3b8;">${nc}</td>
       <td><input value="${r.part || ''}" placeholder="Part no. (ketik utk cari)" autocomplete="off" oninput="partSearch(${r.id},this)" onblur="hidePartDrop()"></td>
-      <td><textarea oninput="uf(${r.id},'name',this.value)" style="width:100%;min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
+      <td>${r.img ? `<img src="/img/products/${r.img}" style="height:30px;float:left;margin:2px 6px 2px 0;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('/img/products/${r.img}','${(r.part || '').replace(/'/g, "\\'")}')">` : ''}<textarea oninput="uf(${r.id},'name',this.value)" style="width:${r.img ? 'calc(100% - 45px)' : '100%'};min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
         <button onclick="rows.find(x=>x.id===${r.id}).subs.push({id:++ctr,text:''});renderRows();" style="font-size:10px;color:#94a3b8;background:none;border:none;cursor:pointer;">+ sub</button></td>
       <td><input type="number" value="${r.qty}" min="1" oninput="uf(${r.id},'qty',this.value)" style="text-align:right;"></td>
       <td><input value="${r.unit || ''}" oninput="uf(${r.id},'unit',this.value)"></td>
@@ -1285,8 +1291,9 @@ function renderPrev() {
     if (r.t === 'n') return `<tr><td colspan="7" style="color:#888;font-size:9px;">${(r.text || '').replace(/\n/g, '<br>')}</td></tr>`
     nc++
     const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#aaa;">${nc}.${si + 1}</td><td></td><td colspan="5">${s.text || ''}</td></tr>`).join('')
-    if (gInfo.inGroup.has(r.id)) return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}</td><td class="r">${r.qty}</td><td class="r"></td><td class="r"></td><td class="r"></td></tr>${subs}`
-    return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}</td><td class="r">${r.qty}</td><td class="r">${fmt(r.price || 0)}</td><td class="r">${r.disc ? r.disc + '%' : '-'}</td><td class="r">${fmt(calcR(r))}</td></tr>${subs}`
+    const pvImg = r.img ? `<div><img src="/img/products/${r.img}" style="height:38px;margin-top:3px;"></div>` : ''
+    if (gInfo.inGroup.has(r.id)) return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}${pvImg}</td><td class="r">${r.qty}</td><td class="r"></td><td class="r"></td><td class="r"></td></tr>${subs}`
+    return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}${pvImg}</td><td class="r">${r.qty}</td><td class="r">${fmt(r.price || 0)}</td><td class="r">${r.disc ? r.disc + '%' : '-'}</td><td class="r">${fmt(calcR(r))}</td></tr>${subs}`
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:8px;">Belum ada item</td></tr>'
 
   document.getElementById('pv-tot').innerHTML = `<table><tr><td>TOTAL</td><td>${fmt(tot)}</td></tr>${dp > 0 ? `<tr><td>DISKON (${dp}%)</td><td>- ${fmt(da)}</td></tr>` : ''}<tr><td>SUB TOTAL</td><td>${fmt(sub)}</td></tr><tr><td>VAT ${vp}%</td><td>${fmt(vat)}</td></tr><tr class="grd"><td>GRAND TOTAL</td><td>${fmt(grand)}</td></tr></table>`
@@ -1294,13 +1301,23 @@ function renderPrev() {
   document.getElementById('pv-ft').innerHTML = n ? '<b>Notes:</b>' + n.split('\n').filter(Boolean).map(l => `<div>${l}</div>`).join('') : ''
 }
 
-function doPDF() {
+async function doPDF() {
   if (!canQuote()) { toast('Engineer tidak bisa membuat quotation', false); return }
   const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
+  // Muat gambar produk sebagai dataURL untuk disematkan ke PDF
+  const imgFiles = [...new Set(rows.filter(r => r.t === 'i' && r.img).map(r => r.img))]
+  const images = {}
+  await Promise.all(imgFiles.map(f =>
+    fetch('/img/products/' + f)
+      .then(r => { if (!r.ok) throw 0; return r.blob() })
+      .then(b => new Promise(res => { const fr = new FileReader(); fr.onload = () => { images[f] = fr.result; res() }; fr.onerror = () => res(); fr.readAsDataURL(b) }))
+      .catch(() => {})
+  ))
   generatePDF({
     info: { qo_number: gv('f-no'), title: gv('f-title'), date: gv('f-date'), valid_until: gv('f-valid'), sales_name: gv('f-sales'), sales_mobile: gv('f-mobile'), payment_terms: gv('f-pay'), delivery_terms: gv('f-del'), notes: gv('f-notes'), vat_pct: vp, discount_pct: dp, engineer: gv('f-eng') },
     customer: { company: gv('f-co'), contact: gv('f-ct'), tel: gv('f-tel'), email: gv('f-em'), address: gv('f-addr') },
-    items: rows
+    items: rows,
+    images
   })
   toast('PDF berhasil didownload!')
 }
@@ -1993,15 +2010,24 @@ function plSearch() {
   const sort = document.getElementById('pl-sort')?.value || ''
   const minP = +(document.getElementById('pl-min')?.value || 0)
   const maxP = +(document.getElementById('pl-max')?.value || 0)
-  plF = PL_ITEMS.filter(([name, part, price, catI]) => {
+  const brand = document.getElementById('pl-brand')?.value ?? ''
+  plF = PL_ITEMS.filter(([name, part, price, catI, img, brandI]) => {
+    if (brand !== '' && (brandI || 0) !== parseInt(brand)) return false
     if (plCat !== '' && catI !== parseInt(plCat)) return false
     if (minP > 0 && price < minP) return false
     if (maxP > 0 && price > maxP) return false
     if (!q) return true
     return q.split(/\s+/).every(t => (name + ' ' + part).toLowerCase().includes(t))
   })
+  // Resolusi (total piksel) dari description, mis. "1280 × 960"
+  const resOf = (it) => {
+    const m = (it[0] || '').match(/(\d{2,6})\s*[×x]\s*(\d{2,6})/)
+    return m ? (+m[1]) * (+m[2]) : -1
+  }
   if (sort === 'asc') plF.sort((a, b) => a[2] - b[2])
   else if (sort === 'desc') plF.sort((a, b) => b[2] - a[2])
+  else if (sort === 'resasc') plF.sort((a, b) => { const ra = resOf(a), rb = resOf(b); if (ra < 0 && rb < 0) return 0; if (ra < 0) return 1; if (rb < 0) return -1; return ra - rb })
+  else if (sort === 'resdesc') plF.sort((a, b) => { const ra = resOf(a), rb = resOf(b); if (ra < 0 && rb < 0) return 0; if (ra < 0) return 1; if (rb < 0) return -1; return rb - ra })
   else if (sort === 'az') plF.sort((a, b) => a[1].localeCompare(b[1]))
   const rc = document.getElementById('pl-rc')
   if (rc) rc.textContent = plF.length === PL_ITEMS.length ? PL_ITEMS.length + ' produk' : plF.length + ' dari ' + PL_ITEMS.length
@@ -2020,7 +2046,7 @@ function renderPL() {
       <td><span class="badge">${PL_CATS[catI]}</span></td>
       <td class="pc">${fmtPL(price)}</td>
       <td style="display:flex;gap:4px;">
-        ${canQuote() ? `<button class="bxs" onclick="addFromPL('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price})">+ Quote</button>` : ''}
+        ${canQuote() ? `<button class="bxs" onclick="addFromPL('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price},'${img || ''}')">+ Quote</button>` : ''}
         ${isAdmin() ? `<button class="bxs" style="border-color:#e2e8f0;color:#64748b;" onclick="saveStarPL('${part.replace(/'/g, "\\'")}',${price},'${PL_CATS[catI]}')">★</button>` : ''}
       </td></tr>`
   }).join('') : `<tr><td colspan="7" class="empty">Tidak ada produk cocok.</td></tr>`
@@ -2029,7 +2055,7 @@ function renderPL() {
   pg.innerHTML = total <= 1 ? '' : (plPg > 1 ? `<button onclick="plGo(${plPg - 1})">← Prev</button>` : '') + `<span style="color:#94a3b8;">Hal ${plPg} / ${total}</span>` + (plPg < total ? `<button onclick="plGo(${plPg + 1})">Next →</button>` : '')
 }
 function plGo(p) { plPg = p; renderPL() }
-function addFromPL(part, name, price) { aItem(name, part, 1, 'unit', price, 0); nav('quotation'); qt('items'); toast(part + ' ditambahkan!') }
+function addFromPL(part, name, price, img) { aItem(name, part, 1, 'unit', price, 0, img || ''); nav('quotation'); qt('items'); toast(part + ' ditambahkan!') }
 async function saveStarPL(part, price, cat) {
   if (!guardAdmin()) return
   try {
@@ -2060,20 +2086,20 @@ function mSearch() {
 }
 function renderM() {
   const start = (mPg - 1) * PER, slice = mF.slice(start, start + PER)
-  document.getElementById('m-bd').innerHTML = slice.length ? slice.map(([name, part, price, catI]) => {
+  document.getElementById('m-bd').innerHTML = slice.length ? slice.map(([name, part, price, catI, img]) => {
     const spec = name && name !== part ? name : ''
     return `<tr style="border-bottom:1px solid #f1f5f9;">
       <td style="padding:5px 7px;"><div style="font-weight:500;font-size:11px;">${part}</div>${spec ? `<div style="font-size:10px;color:#94a3b8;">${spec}</div>` : ''}</td>
       <td style="padding:5px 7px;"><span class="badge" style="font-size:9px;">${PL_CATS[catI]}</span></td>
       <td style="padding:5px 7px;text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmtPL(price)}</td>
-      <td style="padding:5px 7px;"><button class="bxs" onclick="mAdd('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price})">+ Tambah</button></td>
+      <td style="padding:5px 7px;"><button class="bxs" onclick="mAdd('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price},'${img || ''}')">+ Tambah</button></td>
     </tr>`
   }).join('') : `<tr><td colspan="4" class="empty">Tidak ada produk.</td></tr>`
   const total = Math.ceil(mF.length / PER)
   document.getElementById('m-pg').innerHTML = total <= 1 ? '' : (mPg > 1 ? `<button onclick="mGo(${mPg - 1})">←</button>` : '') + `<span style="color:#94a3b8;">${mPg}/${total}</span>` + (mPg < total ? `<button onclick="mGo(${mPg + 1})">→</button>` : '')
 }
 function mGo(p) { mPg = p; renderM() }
-function mAdd(part, name, price) { aItem(name, part, 1, 'unit', price, 0); closeModal(); qt('items'); toast(part + ' ditambahkan!') }
+function mAdd(part, name, price, img) { aItem(name, part, 1, 'unit', price, 0, img || ''); closeModal(); qt('items'); toast(part + ' ditambahkan!') }
 
 // PIPELINE
 function renderPip() {

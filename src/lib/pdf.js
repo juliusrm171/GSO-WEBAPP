@@ -176,6 +176,8 @@ export function generatePDF(quotation) {
     else if (r.t === 'i' && curG !== null) { gSums[curG] += calcItem(r); inGroup.add(r.id) }
   })
 
+  const prodImages = quotation.images || {}
+  const imgRows = {}
   let nc = 0
   const body = []
   items.forEach(r => {
@@ -189,9 +191,10 @@ export function generatePDF(quotation) {
     } else if (r.t === 'i') {
       nc++
       const hide = inGroup.has(r.id)
+      if (r.img && prodImages[r.img]) imgRows[body.length] = prodImages[r.img]
       body.push([
         nc, r.part || '',
-        { content: r.name || '', styles: { fontStyle: 'normal' } },
+        { content: (r.name || '') + (r.img && prodImages[r.img] ? '\n\n\n\n\n' : ''), styles: { fontStyle: 'normal' } },
         '' + r.qty,
         hide ? '' : fmt(r.price || 0),
         hide ? '' : (r.disc ? r.disc + '%' : '-'),
@@ -221,7 +224,14 @@ export function generatePDF(quotation) {
       6: { cellWidth: 26, halign: 'right' }
     },
     theme: 'grid',
-    margin: { left: ML, right: MR }
+    margin: { left: ML, right: MR },
+    didDrawCell: (d) => {
+      if (d.section === 'body' && d.column.index === 2 && imgRows[d.row.index]) {
+        try {
+          doc.addImage(imgRows[d.row.index], 'PNG', d.cell.x + 1.5, d.cell.y + d.cell.height - 17, 15, 15)
+        } catch (e) { /* gambar gagal dimuat, lewati */ }
+      }
+    }
   })
 
   // ===== NOTES (left) + TOTALS (right) =====

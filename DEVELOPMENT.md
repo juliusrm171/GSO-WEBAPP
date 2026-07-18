@@ -63,12 +63,15 @@ Terakhir karena mengonsumsi data PO, target, visit, customer.
 - **Barometer total visit** per sales
 - **Dashboard hasil visit kanvasing**
 
-## FASE 8 — Pricelist Upgrade
-Independen, bisa diselipkan kapan saja.
+## FASE 8 — Pricelist Upgrade 🔶 SEBAGIAN SELESAI (19 Jul 2026)
 
-- **Struktur per brand** (sekarang Hikrobot saja, siap untuk brand baru: kolom/tab brand)
-- **Sort by resolusi** (MP) di halaman pricelist
-- Gambar part (nyambung dengan Fase 2)
+- ✅ **Perbaikan harga** — regenerate dari Excel 2026Q1 kolom "New PL (Rupiah)" (bug lama: nomor PN terbaca sebagai harga); Vision Controller dari file DELA via SAP code
+- ✅ **Kolom Part Number & Description terpisah** di pricelist
+- ✅ **Nama seri resmi Hikrobot** + spesifikasi sebagai description (2.887 item)
+- ✅ **Gambar produk** — 230 gambar dari file DELA, terpasang di 1.341 item; tampil di pricelist, editor quotation, preview, dan PDF
+- ⏳ **Crawl website Hikrobot** untuk nama/gambar per-item yang tersisa (menunggu blokir WAF lepas — jalankan pelan)
+- ✅ **Sort by resolusi** (↑/↓, dihitung dari total piksel di description)
+- ✅ **Struktur multi-brand** — `PL_BRANDS` + filter brand di pricelist; tambah brand baru = tambah data dengan brand index baru
 
 ## FASE 9 — Stock & Penerimaan Barang
 Independen — modul baru.
