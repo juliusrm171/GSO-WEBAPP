@@ -52,7 +52,7 @@ Dikerjakan setelah Fase 3-4 karena butuh data FU yang sudah stabil.
 - **Input PO terpisah** (bukan dari pipeline): diinput admin sales — nomor PO, customer, sales, nilai, tanggal, link ke quotation (opsional)
 - **Target sales:** di-set admin/super admin saja, per sales per bulan, dalam Rupiah
 
-## FASE 7 — Dashboard Baru
+## FASE 7 — Dashboard Baru ✅ SELESAI (19 Jul 2026)
 Terakhir karena mengonsumsi data PO, target, visit, customer.
 
 - **Leaderboard hasil PO** per bulan + history bulanan

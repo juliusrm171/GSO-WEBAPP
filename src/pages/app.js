@@ -366,19 +366,46 @@ export async function renderApp(container, user, logout) {
   <div id="p-dashboard" class="page on">
     <div class="db-greet" id="db-greet"></div>
     <div class="sg" id="dash-stats"></div>
+
+    <!-- Grafik penjualan (PO) -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:.6rem;">
+        <div class="chd" style="margin:0;flex:1;">📈 Grafik Penjualan (berdasarkan PO)</div>
+        <button class="bxs" id="dash-mode-m" onclick="dashSetMode('monthly')">Bulanan</button>
+        <button class="bxs" id="dash-mode-y" onclick="dashSetMode('yearly')">Tahunan</button>
+        <span id="dash-year-ctl" style="display:flex;align-items:center;gap:4px;">
+          <button class="bxs" onclick="dashSetYear(-1)">‹</button>
+          <b id="dash-year-lbl" style="font-size:13px;color:#002060;"></b>
+          <button class="bxs" onclick="dashSetYear(1)">›</button>
+        </span>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div id="dash-sales-chart" style="flex:2;min-width:280px;"></div>
+        <div style="flex:1;min-width:180px;border-left:1px solid #f1f5f9;padding-left:14px;">
+          <div style="font-size:12px;font-weight:600;color:#002060;margin-bottom:6px;">Total Revenue per Tahun</div>
+          <div id="dash-year-rev"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="dash-grid">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:.5rem;">
+          <div class="chd" style="margin:0;flex:1;">🏆 Leaderboard Sales (PO)</div>
+          <button class="bxs" onclick="lbShift(-1)">‹</button>
+          <b id="lb-month-lbl" style="font-size:12px;color:#002060;white-space:nowrap;"></b>
+          <button class="bxs" onclick="lbShift(1)">›</button>
+        </div>
+        <div id="dash-leaderboard"></div>
+      </div>
       <div class="card">
         <div class="chd">Pipeline Status</div>
         <div id="dash-pipeline-chart"></div>
       </div>
-      <div class="card">
-        <div class="chd">Leaderboard Sales</div>
-        <div id="dash-leaderboard"></div>
-      </div>
     </div>
     <div class="dash-grid">
       <div class="card">
-        <div class="chd">Top Customer (by Total Value)</div>
+        <div class="chd">Top Customer (by PO <span id="tc-year-lbl"></span>)</div>
         <div id="dash-top-customer"></div>
       </div>
       <div class="card">
@@ -880,6 +907,16 @@ export async function renderApp(container, user, logout) {
     </div>
   </div>
 
+  <!-- MODAL DETAIL BULAN (dashboard) -->
+  <div class="modal-overlay" id="mpop-overlay">
+    <div class="modal" style="width:340px;">
+      <div class="modal-hd"><span id="mpop-title">Detail Bulan</span>
+        <button onclick="closeMpop()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-bd" id="mpop-body"></div>
+    </div>
+  </div>
+
   <!-- MODAL PROFILE -->
   <div class="modal-overlay" id="profile-overlay">
     <div class="modal" style="width:520px;">
@@ -935,6 +972,9 @@ export async function renderApp(container, user, logout) {
   document.getElementById('profile-overlay').addEventListener('click', e => {
     if (e.target === document.getElementById('profile-overlay')) closeProfile()
   })
+  document.getElementById('mpop-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('mpop-overlay')) closeMpop()
+  })
 
   // Expose globals
   Object.assign(window, {
@@ -955,7 +995,8 @@ export async function renderApp(container, user, logout) {
     updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
     vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList,
-    loadPOs, renderPO, savePO, delPO, renderTargets, saveTargetVal, saveVisitTargetVal
+    loadPOs, renderPO, savePO, delPO, renderTargets, saveTargetVal, saveVisitTargetVal,
+    dashSetMode, dashSetYear, openMpop, closeMpop, lbShift, renderSalesChart, renderLeaderboard
   })
 }
 
@@ -2181,21 +2222,30 @@ function renderDashboard() {
   const greetEl = document.getElementById('db-greet')
   if (greetEl) greetEl.innerHTML = `Halo, <span>${greetName}</span> 👋`
 
-  // Overall stats
+  // Overall stats — berbasis PO riil + pipeline
+  const nowYm = curMonth(), nowYear = nowYm.slice(0, 4)
+  const poYear = pos.filter(p => (p.po_date || '').startsWith(nowYear))
+  const poMonth = pos.filter(p => (p.po_date || '').startsWith(nowYm))
+  const yRev = poYear.reduce((s, p) => s + (+p.amount || 0), 0)
+  const mRev = poMonth.reduce((s, p) => s + (+p.amount || 0), 0)
+  const mTgt = targets.filter(t => t.period === nowYm).reduce((s, t) => s + (+t.target || 0), 0)
+  const mPct = mTgt > 0 ? Math.round(mRev / mTgt * 100) : null
+  const activeVal = pipeline.filter(h => ['Open', 'Nego', 'On Hold'].includes(h.status)).reduce((s, h) => s + (h.grand_total || 0), 0)
   const totalQuo = pipeline.length
-  const totalValue = pipeline.reduce((s, h) => s + (h.grand_total || 0), 0)
-  const wonValue = pipeline.filter(h => h.status === 'Closed - Won').reduce((s, h) => s + (h.grand_total || 0), 0)
   const wonCount = pipeline.filter(h => h.status === 'Closed - Won').length
   const winRate = totalQuo ? Math.round((wonCount / totalQuo) * 100) : 0
 
   const sg = document.getElementById('dash-stats')
   if (sg) sg.innerHTML = `
-    <div class="sc"><div class="sn">${totalQuo}</div><div class="sl">Total Quotation</div></div>
-    <div class="sc"><div class="sn">Rp ${(totalValue / 1e9).toFixed(2)}M</div><div class="sl">Total Pipeline Value</div><div class="sv">dalam Miliar</div></div>
-    <div class="sc"><div class="sn">Rp ${(wonValue / 1e9).toFixed(2)}M</div><div class="sl">Closed Won Value</div></div>
-    <div class="sc"><div class="sn">${winRate}%</div><div class="sl">Win Rate</div></div>
+    <div class="sc"><div class="sn">${fmt(yRev)}</div><div class="sl">Revenue ${nowYear} (PO)</div><div class="sv">${poYear.length} PO</div></div>
+    <div class="sc"><div class="sn">${fmt(mRev)}</div><div class="sl">Revenue Bulan Ini</div><div class="sv">${mPct !== null ? mPct + '% dari target' : 'target belum di-set'}</div></div>
+    <div class="sc"><div class="sn">${fmt(activeVal)}</div><div class="sl">Pipeline Aktif</div><div class="sv">Open + Nego + On Hold</div></div>
+    <div class="sc"><div class="sn">${winRate}%</div><div class="sl">Win Rate</div><div class="sv">${wonCount}/${totalQuo} penawaran</div></div>
     <div class="sc"><div class="sn">${customers.length}</div><div class="sl">Total Customer</div></div>
   `
+
+  renderSalesChart()
+  renderLeaderboard()
 
   // Pipeline status chart
   const statuses = ['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost']
@@ -2215,77 +2265,63 @@ function renderDashboard() {
     </div>`
   }).join('')
 
-  // Leaderboard by sales
-  const salesMap = {}
-  pipeline.forEach(h => {
-    const name = h.profiles?.name || h.sales_name || 'Unknown'
-    if (!salesMap[name]) salesMap[name] = { count: 0, value: 0, won: 0 }
-    salesMap[name].count++
-    salesMap[name].value += (h.grand_total || 0)
-    if (h.status === 'Closed - Won') salesMap[name].won++
-  })
-  const leaderboard = Object.entries(salesMap).sort((a, b) => b[1].value - a[1].value).slice(0, 8)
-
-  const lbEl = document.getElementById('dash-leaderboard')
-  if (lbEl) lbEl.innerHTML = leaderboard.length ? leaderboard.map(([name, d], i) => {
-    const rankClass = i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : ''
-    return `<div class="lb-row">
-      <div class="lb-rank ${rankClass}">${i + 1}</div>
-      <div class="lb-info"><div class="lb-name">${name}</div><div class="lb-sub">${d.count} quotation · ${d.won} won</div></div>
-      <div class="lb-val">${fmt(d.value)}</div>
-    </div>`
-  }).join('') : `<div class="empty">Belum ada data quotation.</div>`
-
-  // Top customers by value
+  // Top customers by PO (tahun berjalan)
+  const tcYl = document.getElementById('tc-year-lbl'); if (tcYl) tcYl.textContent = nowYear
   const custMap = {}
-  pipeline.forEach(h => {
-    const name = h.customer_snapshot?.company || 'Unknown'
+  poYear.forEach(p => {
+    const name = p.customer_name || 'Unknown'
     if (!custMap[name]) custMap[name] = { count: 0, value: 0 }
     custMap[name].count++
-    custMap[name].value += (h.grand_total || 0)
+    custMap[name].value += (+p.amount || 0)
   })
   const topCust = Object.entries(custMap).sort((a, b) => b[1].value - a[1].value).slice(0, 6)
 
   const tcEl = document.getElementById('dash-top-customer')
   if (tcEl) tcEl.innerHTML = topCust.length ? topCust.map(([name, d]) => `
     <div class="tc-row">
-      <div><div class="tc-name">${name}</div><div class="tc-sub">${d.count} quotation</div></div>
+      <div><div class="tc-name">${name}</div><div class="tc-sub">${d.count} PO</div></div>
       <div class="tc-val">${fmt(d.value)}</div>
-    </div>`).join('') : `<div class="empty">Belum ada data.</div>`
+    </div>`).join('') : `<div class="empty">Belum ada PO tahun ini.</div>`
 
-  // Customer database breakdown
+  // Customer database breakdown + Existing vs New + kanvasing pending
   const ptCount = customers.filter(c => c.customer_type !== 'End User').length
   const euCount = customers.filter(c => c.customer_type === 'End User').length
+  const newCust = customers.filter(c => (c.created_at || '').startsWith(nowYear)).length
+  const kanvasPending = [...new Set(kanvasVisits().map(v => (v.customer_name || '').trim()).filter(Boolean))].length
   const cbEl = document.getElementById('dash-cust-breakdown')
   if (cbEl) cbEl.innerHTML = `
     <div class="cb-row"><span style="font-size:12px;color:#64748b;"><span class="badge badge-pt">PT</span> Perusahaan</span><span style="font-weight:600;color:#002060;">${ptCount}</span></div>
     <div class="cb-row"><span style="font-size:12px;color:#64748b;"><span class="badge badge-eu">End User</span> Individu</span><span style="font-weight:600;color:#002060;">${euCount}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">🆕 New Customer ${nowYear}</span><span style="font-weight:600;color:#16a34a;">${newCust}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Existing Customer</span><span style="font-weight:600;color:#002060;">${customers.length - newCust}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">📥 Kanvasing menunggu approval</span><span style="font-weight:600;color:#b45309;">${kanvasPending}</span></div>
     <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total Customer</span><span style="font-weight:700;color:#002060;">${customers.length}</span></div>
-    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Produk Tersimpan</span><span style="font-weight:700;color:#002060;">${products.length}</span></div>
   `
 
-  // Visit performance per sales (this month)
+  // Barometer visit per sales (target per-sales dari tab PO)
   const dvEl = document.getElementById('dash-visits')
   if (dvEl) {
     const now = new Date()
     const ym = now.toISOString().slice(0, 7)
     const mv = visits.filter(v => (v.visit_date || '').startsWith(ym))
     const allSales = [...new Set([
-      ...profiles.map(p => p.name),
+      ...profiles.filter(p => p.role !== 'engineer').map(p => p.name),
       ...visits.map(v => v.profiles?.name || v.sales_name),
     ].filter(Boolean))].sort()
     const dayOfMonth = now.getDate()
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-    const expectedByNow = visitTarget * (dayOfMonth / daysInMonth)
     dvEl.innerHTML = allSales.length ? allSales.map(name => {
+      const pid = profiles.find(p => p.name === name)?.id
+      const tgt = visitTargetOf(pid)
+      const expectedByNow = tgt * (dayOfMonth / daysInMonth)
       const count = mv.filter(v => (v.profiles?.name || v.sales_name) === name).length
-      const pct = Math.min((count / visitTarget) * 100, 100)
+      const pct = Math.min((count / (tgt || 1)) * 100, 100)
       const onTrack = count >= expectedByNow
-      const color = count >= visitTarget ? '#16a34a' : onTrack ? '#3b82f6' : '#f59e0b'
+      const color = count >= tgt ? '#16a34a' : onTrack ? '#3b82f6' : '#f59e0b'
       return `<div class="vm-row">
         <div class="vm-name">${name}</div>
         <div class="vm-track"><div class="vm-fill" style="width:${Math.max(pct, count > 0 ? 10 : 0)}%;background:${color};">${count > 0 ? count : ''}</div></div>
-        <div class="vm-stat">${count}/${visitTarget} <span class="vm-badge ${onTrack ? 'ontrack' : 'behind'}">${count >= visitTarget ? '✓ Tercapai' : onTrack ? 'On Track' : 'Behind'}</span></div>
+        <div class="vm-stat">${count}/${tgt} <span class="vm-badge ${onTrack ? 'ontrack' : 'behind'}">${count >= tgt ? '✓ Tercapai' : onTrack ? 'On Track' : 'Behind'}</span></div>
       </div>`
     }).join('') : '<div class="empty">Belum ada data visit.</div>'
   }
@@ -2304,6 +2340,110 @@ function renderDashboard() {
       <div class="recent-val">${h.grand_total ? fmt(h.grand_total) : '-'}</div>
     </div>`
   }).join('') : `<div class="empty">Belum ada penawaran.</div>`
+}
+
+// ── GRAFIK PENJUALAN & LEADERBOARD PO ──
+let dashMode = 'monthly', dashYear = new Date().getFullYear(), lbMonth = new Date().toISOString().slice(0, 7)
+const MONTH_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+
+function dashSetMode(m) { dashMode = m; renderSalesChart() }
+function dashSetYear(d) { dashYear += d; renderSalesChart() }
+
+function renderSalesChart() {
+  const el = document.getElementById('dash-sales-chart'); if (!el) return
+  const bm = document.getElementById('dash-mode-m'), by = document.getElementById('dash-mode-y')
+  const on = 'background:#002060;color:#fff;border-color:#002060;'
+  if (bm) bm.style.cssText = dashMode === 'monthly' ? on : ''
+  if (by) by.style.cssText = dashMode === 'yearly' ? on : ''
+  const yl = document.getElementById('dash-year-lbl'); if (yl) yl.textContent = dashYear
+  const yc = document.getElementById('dash-year-ctl'); if (yc) yc.style.display = dashMode === 'monthly' ? 'flex' : 'none'
+
+  if (dashMode === 'monthly') {
+    const totals = Array.from({ length: 12 }, (_, i) =>
+      pos.filter(p => (p.po_date || '').startsWith(`${dashYear}-${String(i + 1).padStart(2, '0')}`)).reduce((s, p) => s + (+p.amount || 0), 0))
+    const max = Math.max(...totals, 1)
+    el.innerHTML = `<div style="display:flex;align-items:flex-end;gap:5px;height:165px;">` + totals.map((t, i) => {
+      const h = Math.round(t / max * 130)
+      const ym = `${dashYear}-${String(i + 1).padStart(2, '0')}`
+      return `<div onclick="openMpop('${ym}')" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;cursor:pointer;height:100%;" title="${fmt(t)} — klik untuk detail">
+        <div style="width:100%;max-width:34px;height:${Math.max(h, t > 0 ? 6 : 2)}px;background:${t > 0 ? '#002060' : '#e2e8f0'};border-radius:4px 4px 0 0;transition:height .3s;"></div>
+        <div style="font-size:9px;color:#64748b;">${MONTH_ID[i]}</div>
+      </div>`
+    }).join('') + `</div><div style="font-size:10px;color:#94a3b8;margin-top:4px;">Klik bulan untuk lihat total, target, dan status achieve</div>`
+  } else {
+    const years = [...new Set(pos.map(p => (p.po_date || '').slice(0, 4)).filter(Boolean))].sort()
+    if (!years.length) { el.innerHTML = '<div class="empty">Belum ada data PO.</div>' } else {
+      const totals = years.map(y => pos.filter(p => (p.po_date || '').startsWith(y)).reduce((s, p) => s + (+p.amount || 0), 0))
+      const max = Math.max(...totals, 1)
+      el.innerHTML = years.map((y, i) => `<div class="bar-row">
+        <div class="bar-label">${y}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(totals[i] / max * 100, totals[i] > 0 ? 8 : 0)}%;background:#002060;"></div></div>
+        <div class="bar-val" style="min-width:110px;text-align:right;">${fmt(totals[i])}</div>
+      </div>`).join('')
+    }
+  }
+
+  // Panel kanan: total revenue per tahun
+  const yrEl = document.getElementById('dash-year-rev')
+  if (yrEl) {
+    const years = [...new Set(pos.map(p => (p.po_date || '').slice(0, 4)).filter(Boolean))].sort().reverse()
+    yrEl.innerHTML = years.length ? years.map(y => {
+      const t = pos.filter(p => (p.po_date || '').startsWith(y)).reduce((s, p) => s + (+p.amount || 0), 0)
+      const n = pos.filter(p => (p.po_date || '').startsWith(y)).length
+      return `<div class="cb-row"><span style="font-size:12px;color:#64748b;">${y} <span style="font-size:10px;color:#94a3b8;">(${n} PO)</span></span><span style="font-weight:600;color:#002060;">${fmt(t)}</span></div>`
+    }).join('') : '<div class="empty" style="padding:8px 0;">Belum ada PO.</div>'
+  }
+}
+
+function openMpop(ym) {
+  const [y, m] = ym.split('-')
+  const list = pos.filter(p => (p.po_date || '').startsWith(ym))
+  const tot = list.reduce((s, p) => s + (+p.amount || 0), 0)
+  const tgt = targets.filter(t => t.period === ym).reduce((s, t) => s + (+t.target || 0), 0)
+  const pct = tgt > 0 ? Math.round(tot / tgt * 100) : null
+  const achieved = tgt > 0 && tot >= tgt
+  document.getElementById('mpop-title').textContent = '📅 ' + MONTH_ID[+m - 1] + ' ' + y
+  document.getElementById('mpop-body').innerHTML = `
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total PO</span><span style="font-weight:600;">${list.length}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total Revenue</span><span style="font-weight:700;color:#002060;">${fmt(tot)}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Target (semua sales)</span><span style="font-weight:600;">${tgt > 0 ? fmt(tgt) : 'Belum di-set'}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Persentase</span><span style="font-weight:700;color:${achieved ? '#16a34a' : '#002060'};">${pct !== null ? pct + '%' : '—'}</span></div>
+    <div style="margin-top:10px;text-align:center;padding:8px;border-radius:8px;font-weight:700;font-size:13px;background:${tgt === 0 ? '#f1f5f9' : achieved ? '#dcfce7' : '#fef2f2'};color:${tgt === 0 ? '#64748b' : achieved ? '#16a34a' : '#dc2626'};">
+      ${tgt === 0 ? 'Target belum di-set' : achieved ? '✅ ACHIEVE' : '❌ Belum Achieve'}
+    </div>`
+  document.getElementById('mpop-overlay').classList.add('on')
+}
+function closeMpop() { document.getElementById('mpop-overlay').classList.remove('on') }
+
+function lbShift(d) {
+  const [y, m] = lbMonth.split('-').map(Number)
+  const dt = new Date(y, m - 1 + d, 1)
+  lbMonth = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0')
+  renderLeaderboard()
+}
+
+function renderLeaderboard() {
+  const lbEl = document.getElementById('dash-leaderboard'); if (!lbEl) return
+  const [y, m] = lbMonth.split('-')
+  const lbl = document.getElementById('lb-month-lbl'); if (lbl) lbl.textContent = MONTH_ID[+m - 1] + ' ' + y
+  const map = {}
+  pos.filter(p => (p.po_date || '').startsWith(lbMonth)).forEach(p => {
+    const id = p.sales_id || 'x', name = poSalesName(p)
+    if (!map[id]) map[id] = { name, count: 0, value: 0 }
+    map[id].count++
+    map[id].value += (+p.amount || 0)
+  })
+  const rows = Object.entries(map).sort((a, b) => b[1].value - a[1].value).slice(0, 8)
+  lbEl.innerHTML = rows.length ? rows.map(([id, d], i) => {
+    const rankClass = i === 0 ? 'r1' : i === 1 ? 'r2' : i === 2 ? 'r3' : ''
+    const tgt = +(targets.find(t => t.sales_id === id && t.period === lbMonth)?.target || 0)
+    const pct = tgt > 0 ? Math.round(d.value / tgt * 100) : null
+    return `<div class="lb-row">
+      <div class="lb-rank ${rankClass}">${i + 1}</div>
+      <div class="lb-info"><div class="lb-name">${d.name}</div><div class="lb-sub">${d.count} PO${pct !== null ? ' · ' + pct + '% dari target' : ''}</div></div>
+      <div class="lb-val">${fmt(d.value)}</div>
+    </div>`
+  }).join('') : `<div class="empty">Belum ada PO di bulan ini.</div>`
 }
 
 async function updS(id, val) {
