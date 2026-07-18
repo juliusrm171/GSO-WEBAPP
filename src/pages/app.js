@@ -596,6 +596,15 @@ export async function renderApp(container, user, logout) {
           <option value="">Semua Brand</option>
           ${PL_BRANDS.map((b, i) => `<option value="${i}">${b}</option>`).join('')}
         </select>
+        <select id="pl-res" onchange="plSearch()">
+          <option value="">Semua Resolusi</option>
+          <option value="0-1">0 – 1 MP</option>
+          <option value="1-3">1 – 3 MP</option>
+          <option value="3-10">3 – 10 MP</option>
+          <option value="10-20">10 – 20 MP</option>
+          <option value="20-40">20 – 40 MP</option>
+          <option value="40-">&gt; 40 MP</option>
+        </select>
         <select id="pl-sort" onchange="plSearch()">
           <option value="">Relevansi</option>
           <option value="asc">Harga ↑</option>
@@ -2011,19 +2020,31 @@ function plSearch() {
   const minP = +(document.getElementById('pl-min')?.value || 0)
   const maxP = +(document.getElementById('pl-max')?.value || 0)
   const brand = document.getElementById('pl-brand')?.value ?? ''
-  plF = PL_ITEMS.filter(([name, part, price, catI, img, brandI]) => {
-    if (brand !== '' && (brandI || 0) !== parseInt(brand)) return false
-    if (plCat !== '' && catI !== parseInt(plCat)) return false
-    if (minP > 0 && price < minP) return false
-    if (maxP > 0 && price > maxP) return false
-    if (!q) return true
-    return q.split(/\s+/).every(t => (name + ' ' + part).toLowerCase().includes(t))
-  })
+  const resF = document.getElementById('pl-res')?.value ?? ''
   // Resolusi (total piksel) dari description, mis. "1280 × 960"
   const resOf = (it) => {
     const m = (it[0] || '').match(/(\d{2,6})\s*[×x]\s*(\d{2,6})/)
     return m ? (+m[1]) * (+m[2]) : -1
   }
+  let resMin = 0, resMax = Infinity
+  if (resF) {
+    const [lo, hi] = resF.split('-')
+    resMin = (+lo || 0) * 1e6
+    resMax = hi === '' ? Infinity : (+hi) * 1e6
+  }
+  plF = PL_ITEMS.filter((it) => {
+    const [name, part, price, catI, img, brandI] = it
+    if (brand !== '' && (brandI || 0) !== parseInt(brand)) return false
+    if (plCat !== '' && catI !== parseInt(plCat)) return false
+    if (minP > 0 && price < minP) return false
+    if (maxP > 0 && price > maxP) return false
+    if (resF) {
+      const px = resOf(it)
+      if (px < 0 || px < resMin || px >= resMax) return false
+    }
+    if (!q) return true
+    return q.split(/\s+/).every(t => (name + ' ' + part).toLowerCase().includes(t))
+  })
   if (sort === 'asc') plF.sort((a, b) => a[2] - b[2])
   else if (sort === 'desc') plF.sort((a, b) => b[2] - a[2])
   else if (sort === 'resasc') plF.sort((a, b) => { const ra = resOf(a), rb = resOf(b); if (ra < 0 && rb < 0) return 0; if (ra < 0) return 1; if (rb < 0) return -1; return ra - rb })
