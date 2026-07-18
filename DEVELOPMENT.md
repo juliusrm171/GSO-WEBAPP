@@ -27,7 +27,7 @@ Dikerjakan sebelum pipeline karena pipeline akan menarik data dari quotation.
 - **Grupping = bundle:** item di bawah grup di-total ke grup; di preview & PDF harga per item TIDAK ditampilkan, hanya subtotal di baris grup (item tetap tampil sebagai daftar isi bundle tanpa harga)
 - **Gambar + deskripsi part:** kolom gambar di items. Catatan: website Hikrobot full JS-rendered, scraping langsung tidak reliable → pendekatan: (a) fitur upload gambar per part di pricelist/product, (b) best-effort ambil dari API internal Hikrobot untuk part populer
 
-## FASE 3 — Shodan & Pipeline Rework
+## FASE 3 — Shodan & Pipeline Rework ✅ SELESAI (19 Jul 2026)
 - **Tab baru "Shodan"** = list inquiry (belum tentu jadi penawaran/forecast). Struktur data mirip quotation (customer, judul, estimasi value, sales, status)
 - **Pipeline** otomatis terisi dari quotation yang dibuat; shodan yang naik jadi penawaran ter-link ke quotation-nya
 - **Latest FU:** kolom tanggal follow-up terakhir saja (di pipeline & shodan)

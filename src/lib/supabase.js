@@ -138,6 +138,40 @@ export async function deleteVisit(id) {
   if (error) throw error
 }
 
+export async function updateQuotationFields(id, fields) {
+  const { error } = await supabase.from('quotations').update(fields).eq('id', id)
+  if (error) throw error
+}
+
+// SHODAN (inquiry)
+export async function getShodans() {
+  const { data, error } = await supabase
+    .from('shodans')
+    .select('*, profiles(name)')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data
+}
+
+export async function addShodan(sh) {
+  const session = await getSession()
+  const payload = { ...sh, created_by: session.user.id }
+  const { data, error } = await supabase.from('shodans').insert(payload).select('*, profiles(name)').single()
+  if (error) throw error
+  return data
+}
+
+export async function updateShodan(id, fields) {
+  const { data, error } = await supabase.from('shodans').update(fields).eq('id', id).select('*, profiles(name)').single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteShodan(id) {
+  const { error } = await supabase.from('shodans').delete().eq('id', id)
+  if (error) throw error
+}
+
 // SETTINGS
 export async function getSetting(key) {
   const { data, error } = await supabase.from('app_settings').select('value').eq('key', key).maybeSingle()

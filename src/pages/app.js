@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, getProfiles, updateProfile, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getProfiles, updateProfile, getSession, getVisits, addVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
 import { PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -285,7 +285,7 @@ const FULL_LOGO_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAlgAAADlCAYAAACPrYleAAAKMWlDQ1BJQ
 
 let rows = [], ctr = 0, plF = PL_ITEMS.slice(), plPg = 1, plCat = ''
 let mF = PL_ITEMS.slice(), mPg = 1
-let customers = [], products = [], pipeline = [], profiles = [], visits = [], contacts = []
+let customers = [], products = [], pipeline = [], profiles = [], visits = [], contacts = [], shodans = []
 let visitTarget = 10
 let currentUser = null, onLogout = null
 let myRole = 'sales', myProfile = null
@@ -352,6 +352,7 @@ export async function renderApp(container, user, logout) {
     <div class="ntab" onclick="nav('quotation')">📄 Quotation</div>
     <div class="ntab" onclick="nav('pricelist')">💰 Pricelist</div>
     <div class="ntab" onclick="nav('pipeline')">📊 Pipeline</div>
+    <div class="ntab" onclick="nav('shodan')">📥 Shodan</div>
     <div class="ntab" onclick="nav('visit')">📍 Visit</div>
     <div class="ntab" onclick="nav('database')">🗄 Database</div>
     <div class="nright">
@@ -616,12 +617,56 @@ export async function renderApp(container, user, logout) {
           <th style="min-width:130px;">Customer</th>
           <th style="min-width:130px;">Deskripsi</th>
           <th style="width:110px;">Grand Total</th>
+          <th style="width:105px;">FU Terakhir</th>
           <th style="width:115px;">Status</th>
         </tr></thead>
         <tbody id="pip-bd"></tbody>
       </table></div>
       <div style="font-size:11px;color:#94a3b8;margin-top:5px;" id="pip-ct"></div>
     </div>
+    <div class="card" id="fu-alert-card" style="display:none;border-left:4px solid #f59e0b;">
+      <div class="chd" style="color:#b45309;">⚠️ Perlu Follow-Up (tanpa update &gt; 2 minggu)</div>
+      <div id="fu-alert-list"></div>
+    </div>
+  </div>
+
+  <!-- SHODAN (INQUIRY) -->
+  <div id="p-shodan" class="page">
+    <div class="card" id="shodan-form-card">
+      <div class="chd">📥 Input Shodan (Inquiry / Forecast)</div>
+      <div class="g3" style="margin-bottom:8px;">
+        <div class="fld"><label>Judul / Inquiry</label><input id="sh-title" placeholder="Contoh: Kamera inspeksi label line 3"></div>
+        <div class="fld"><label>Customer</label><input id="sh-cust" list="cust-dl" placeholder="Ketik nama customer..." autocomplete="off"></div>
+        <div class="fld"><label>Kontak Person</label><input id="sh-contact"></div>
+      </div>
+      <div class="g3" style="margin-bottom:8px;">
+        <div class="fld"><label>Estimasi Value (Rp)</label><input id="sh-val" type="number"></div>
+        <div class="fld"><label>Tanggal FU Terakhir</label><input id="sh-fu" type="date"></div>
+        <div class="fld"><label>Catatan</label><input id="sh-notes"></div>
+      </div>
+      <button class="bp" style="padding:7px 14px;font-size:12px;" onclick="saveShodan()">💾 Simpan Shodan</button>
+    </div>
+    <div class="card">
+      <div style="display:flex;gap:7px;margin-bottom:.7rem;flex-wrap:wrap;">
+        <input id="sh-q" placeholder="Cari judul, customer..." style="flex:1;padding:7px 10px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" oninput="renderShodan()">
+        <select id="sh-f" style="padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" onchange="renderShodan()">
+          <option value="">Semua status</option>
+          <option>Open</option><option>Penawaran</option><option>Won</option><option>Lost</option>
+        </select>
+        <button class="bs" style="padding:7px 11px;font-size:11px;" onclick="loadShodans().then(renderShodan)">↻ Refresh</button>
+      </div>
+      <div class="tblwrap"><table class="piptbl">
+        <thead><tr>
+          <th style="width:80px;">Tanggal</th><th style="min-width:150px;">Judul / Inquiry</th>
+          <th style="min-width:120px;">Customer</th><th>Sales</th>
+          <th style="width:110px;">Est. Value</th><th style="width:105px;">FU Terakhir</th>
+          <th style="width:105px;">Status</th><th style="width:110px;"></th>
+        </tr></thead>
+        <tbody id="sh-bd"></tbody>
+      </table></div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:5px;" id="sh-ct"></div>
+    </div>
+    <datalist id="cust-dl"></datalist>
   </div>
 
   <!-- VISIT -->
@@ -837,10 +882,12 @@ export async function renderApp(container, user, logout) {
   plSearch()
   renderRows()
 
-  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts()])
+  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts(), loadShodans()])
   applyRoleUI()
   renderDashboard()
   if (!gv('f-no')) document.getElementById('f-no').value = genQuoNo()
+  const dl = document.getElementById('cust-dl')
+  if (dl) dl.innerHTML = customers.map(c => `<option value="${(c.company || '').replace(/"/g, '&quot;')}">`).join('')
 
   document.getElementById('profile-overlay').addEventListener('click', e => {
     if (e.target === document.getElementById('profile-overlay')) closeProfile()
@@ -861,7 +908,8 @@ export async function renderApp(container, user, logout) {
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
     doPDF, doSaveQuo, doLogout: onLogout,
     switchDbTab,
-    openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo
+    openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo,
+    updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo
   })
 }
 
@@ -874,10 +922,13 @@ function applyRoleUI() {
   const lbl = document.getElementById('user-label')
   if (lbl) lbl.innerHTML = `${myProfile?.name || currentUser?.email || ''} <span class="role-badge">${ROLE_LABELS[myRole] || myRole}</span>`
 
-  // Engineer: sembunyikan tab Quotation (tidak boleh membuat penawaran)
-  if (!canQuote()) document.querySelectorAll('nav .ntab').forEach(t => {
-    if (t.textContent.includes('Quotation')) t.style.display = 'none'
-  })
+  // Engineer: sembunyikan tab Quotation (tidak boleh membuat penawaran) + form input shodan
+  if (!canQuote()) {
+    document.querySelectorAll('nav .ntab').forEach(t => {
+      if (t.textContent.includes('Quotation')) t.style.display = 'none'
+    })
+    const sf = document.getElementById('shodan-form-card'); if (sf) sf.style.display = 'none'
+  }
 
   // Non-admin: sembunyikan tombol tulis database, export, dan kunci target visit
   if (!isAdmin()) {
@@ -941,9 +992,10 @@ function nav(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('on'))
   document.querySelectorAll('nav .ntab').forEach(b => b.classList.remove('on'))
   document.getElementById('p-' + name).classList.add('on')
-  const idx = ['dashboard', 'quotation', 'pricelist', 'pipeline', 'visit', 'database'].indexOf(name)
+  const idx = ['dashboard', 'quotation', 'pricelist', 'pipeline', 'shodan', 'visit', 'database'].indexOf(name)
   document.querySelectorAll('nav .ntab')[idx].classList.add('on')
   if (name === 'pipeline') renderPip()
+  if (name === 'shodan') renderShodan()
   if (name === 'dashboard') renderDashboard()
   if (name === 'visit') renderVisits()
   if (name === 'database') { renderCustList(''); renderProdList('') }
@@ -1164,13 +1216,21 @@ async function doSaveQuo() {
   const da = tot * dp / 100, sub = tot - da, vat = sub * vp / 100
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'
   try {
-    await saveQuotation({
+    const saved = await saveQuotation({
       qo_number: gv('f-no'), title: gv('f-title') || null, date: gv('f-date') || null, valid_until: gv('f-valid') || null,
       customer_snapshot: { company: gv('f-co'), contact: gv('f-ct'), tel: gv('f-tel'), email: gv('f-em'), address: gv('f-addr') },
       items: rows, vat_pct: vp, discount_pct: dp, grand_total: sub + vat,
       payment_terms: gv('f-pay'), delivery_terms: gv('f-del'), notes: gv('f-notes'),
       sales_name: gv('f-sales'), sales_mobile: gv('f-mobile'), engineer: gv('f-eng'), status: 'Open'
     })
+    // Link shodan → quotation kalau berasal dari konversi shodan
+    if (shodanLinkId && saved?.id) {
+      try {
+        const s = await updateShodan(shodanLinkId, { status: 'Penawaran', quotation_id: saved.id })
+        const i = shodans.findIndex(x => x.id === shodanLinkId); if (i >= 0) shodans[i] = s
+      } catch (e) { console.error('Link shodan gagal:', e) }
+      shodanLinkId = null
+    }
     toast('Quotation tersimpan ke Pipeline!')
     await loadPipeline()
   } catch (e) { toast('Gagal simpan: ' + e.message, false) }
@@ -1675,12 +1735,45 @@ function renderPip() {
       <td>${cust.company || '-'}</td>
       <td style="color:#64748b;font-size:11px;">${desc || '-'}</td>
       <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? fmt(h.grand_total) : '-'}</td>
-      <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}</td>
+      <td><input type="date" value="${h.last_fu || ''}" onchange="updFU('${h.id}',this.value)" ${(isAdmin() || (myRole === 'sales' && isMe)) ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
+      <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}${h.status === 'Closed - Lost' && h.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${h.lost_reason}</div>` : ''}</td>
     </tr>`
-  }).join('') || `<tr><td colspan="7" class="empty">Tidak ada data.</td></tr>`
+  }).join('') || `<tr><td colspan="8" class="empty">Tidak ada data.</td></tr>`
 
   const ct = document.getElementById('pip-ct')
   if (ct) ct.textContent = filtered.length + ' dari ' + pipeline.length + ' penawaran'
+  renderFuAlerts()
+}
+
+// List perlu follow-up: tanpa update > 2 minggu, status masih berjalan
+function fuAge(baseDate) {
+  if (!baseDate) return Infinity
+  return Math.floor((Date.now() - new Date(baseDate).getTime()) / 86400000)
+}
+
+function renderFuAlerts() {
+  const card = document.getElementById('fu-alert-card'), list = document.getElementById('fu-alert-list')
+  if (!card || !list) return
+  const LIMIT = 14
+  const items = []
+  pipeline.filter(h => ['Open', 'Nego', 'On Hold'].includes(h.status)).forEach(h => {
+    const age = fuAge(h.last_fu || h.date || h.created_at)
+    if (age > LIMIT) items.push({ tipe: 'Pipeline', label: (h.qo_number || '-') + ' · ' + (h.customer_snapshot?.company || '-'), sales: h.profiles?.name || h.sales_name || '-', age })
+  })
+  shodans.filter(s => s.status === 'Open').forEach(s => {
+    const age = fuAge(s.last_fu || s.created_at)
+    if (age > LIMIT) items.push({ tipe: 'Shodan', label: (s.title || '-') + ' · ' + (s.customer_name || '-'), sales: s.profiles?.name || '-', age })
+  })
+  if (!items.length) { card.style.display = 'none'; return }
+  items.sort((a, b) => b.age - a.age)
+  card.style.display = 'block'
+  list.innerHTML = items.map(i => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #fef3c7;font-size:12px;">
+      <span class="badge" style="background:${i.tipe === 'Shodan' ? '#fef3c7' : '#e0e7ff'};color:${i.tipe === 'Shodan' ? '#92400e' : '#3730a3'};">${i.tipe}</span>
+      <span style="flex:1;">${i.label}</span>
+      <span style="color:#64748b;">${i.sales}</span>
+      <span style="color:#b45309;font-weight:600;white-space:nowrap;">${i.age === Infinity ? 'belum pernah FU' : i.age + ' hari'}</span>
+    </div>`).join('')
 }
 
 // DASHBOARD
@@ -1819,16 +1912,127 @@ async function updS(id, val) {
   if (!(isAdmin() || (myRole === 'sales' && h0?.created_by === currentUser?.id))) {
     toast('Kamu hanya bisa mengubah status penawaran milikmu sendiri', false); renderPip(); return
   }
+  let reason = null
+  if (val === 'Closed - Lost') {
+    reason = prompt('Keterangan kenapa Lost (wajib diisi):')
+    if (!reason || !reason.trim()) { toast('Status Lost wajib ada keterangan', false); renderPip(); return }
+    reason = reason.trim()
+  }
   try {
-    await updateQuotationStatus(id, val)
-    const h = pipeline.find(x => x.id === id); if (h) h.status = val
+    await updateQuotationFields(id, { status: val, ...(reason ? { lost_reason: reason } : {}) })
+    if (h0) { h0.status = val; if (reason) h0.lost_reason = reason }
     renderPip(); toast('Status: ' + val)
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
+async function updFU(id, date) {
+  try {
+    await updateQuotationFields(id, { last_fu: date || null })
+    const h = pipeline.find(x => x.id === id); if (h) h.last_fu = date || null
+    renderFuAlerts(); toast('FU terakhir diupdate')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+// ── SHODAN ──
+async function loadShodans() {
+  try { shodans = await getShodans() } catch (e) { console.error(e) }
+}
+
+async function saveShodan() {
+  if (!canQuote()) { toast('Engineer tidak bisa input shodan', false); return }
+  const title = gv('sh-title').trim()
+  if (!title) { toast('Judul inquiry wajib diisi', false); return }
+  try {
+    const s = await addShodan({
+      title, customer_name: gv('sh-cust'), contact: gv('sh-contact'),
+      est_value: +(gv('sh-val') || 0), last_fu: gv('sh-fu') || null, notes: gv('sh-notes')
+    })
+    shodans.unshift(s)
+    ;['sh-title', 'sh-cust', 'sh-contact', 'sh-val', 'sh-fu', 'sh-notes'].forEach(id => document.getElementById(id).value = '')
+    renderShodan(); toast('Shodan tersimpan!')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+function canEditShodan(s) { return isAdmin() || (myRole === 'sales' && s.created_by === currentUser?.id) }
+
+function renderShodan() {
+  const bd = document.getElementById('sh-bd'); if (!bd) return
+  const q = (gv('sh-q') || '').toLowerCase(), f = gv('sh-f')
+  const filtered = shodans.filter(s => {
+    const matchQ = !q || ((s.title || '') + (s.customer_name || '') + (s.profiles?.name || '')).toLowerCase().includes(q)
+    return matchQ && (!f || s.status === f)
+  })
+  bd.innerHTML = filtered.map(s => {
+    const editable = canEditShodan(s)
+    const age = fuAge(s.last_fu || s.created_at)
+    const warn = s.status === 'Open' && age > 14
+    return `<tr>
+      <td style="white-space:nowrap;font-size:10px;">${fmtD(s.created_at)}</td>
+      <td style="font-weight:500;">${s.title || '-'}${warn ? ' <span style="color:#b45309;font-size:9px;">⚠ ' + age + ' hari</span>' : ''}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${s.notes}</div>` : ''}</td>
+      <td>${s.customer_name || '-'}${s.contact ? `<div style="font-size:10px;color:#94a3b8;">${s.contact}</div>` : ''}</td>
+      <td style="font-size:11px;color:#64748b;">${s.profiles?.name || '-'}</td>
+      <td style="text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmt(s.est_value || 0)}</td>
+      <td><input type="date" value="${s.last_fu || ''}" onchange="updShFU('${s.id}',this.value)" ${editable ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
+      <td>${editable ? `<select onchange="updShStatus('${s.id}',this.value)">${['Open', 'Penawaran', 'Won', 'Lost'].map(x => `<option${s.status === x ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${s.status}</span>`}${s.status === 'Lost' && s.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${s.lost_reason}</div>` : ''}</td>
+      <td style="white-space:nowrap;">
+        ${canQuote() && s.status === 'Open' ? `<button class="bxs" onclick="shodanToQuo('${s.id}')">→ Quotation</button>` : ''}
+        ${editable ? `<button class="bdel" onclick="delShodan('${s.id}')">🗑</button>` : ''}
+      </td>
+    </tr>`
+  }).join('') || `<tr><td colspan="8" class="empty">Belum ada shodan.</td></tr>`
+  const ct = document.getElementById('sh-ct')
+  if (ct) ct.textContent = filtered.length + ' dari ' + shodans.length + ' shodan'
+}
+
+async function updShStatus(id, val) {
+  const s0 = shodans.find(x => x.id === id)
+  if (!s0 || !canEditShodan(s0)) { renderShodan(); return }
+  let reason = null
+  if (val === 'Lost') {
+    reason = prompt('Keterangan kenapa Lost (wajib diisi):')
+    if (!reason || !reason.trim()) { toast('Status Lost wajib ada keterangan', false); renderShodan(); return }
+    reason = reason.trim()
+  }
+  try {
+    const s = await updateShodan(id, { status: val, ...(reason ? { lost_reason: reason } : {}) })
+    const i = shodans.findIndex(x => x.id === id); if (i >= 0) shodans[i] = s
+    renderShodan(); toast('Status shodan: ' + val)
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function updShFU(id, date) {
+  try {
+    const s = await updateShodan(id, { last_fu: date || null })
+    const i = shodans.findIndex(x => x.id === id); if (i >= 0) shodans[i] = s
+    renderFuAlerts(); toast('FU shodan diupdate')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function delShodan(id) {
+  if (!confirm('Hapus shodan ini?')) return
+  try {
+    await deleteShodan(id)
+    shodans = shodans.filter(x => x.id !== id)
+    renderShodan(); toast('Shodan dihapus')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+// Konversi shodan → quotation: prefill form, link setelah disimpan
+let shodanLinkId = null
+function shodanToQuo(id) {
+  const s = shodans.find(x => x.id === id); if (!s) return
+  shodanLinkId = id
+  document.getElementById('f-title').value = s.title || ''
+  const c = customers.find(x => (x.company || '').toLowerCase() === (s.customer_name || '').toLowerCase())
+  if (c) { selC(c.id) } else { document.getElementById('f-co').value = s.customer_name || '' }
+  if (s.contact && !gv('f-ct')) document.getElementById('f-ct').value = s.contact
+  nav('quotation'); qt('info')
+  toast('Form quotation terisi dari shodan — simpan ke pipeline untuk link otomatis')
+}
+
 function expCSV() {
   if (!guardAdmin()) return
-  const r = [['QO No.', 'Tanggal', 'Sales', 'Customer', 'Grand Total', 'Status'], ...pipeline.map(h => [h.qo_number, h.date, h.sales_name, h.customer_snapshot?.company, h.grand_total, h.status])]
+  const r = [['QO No.', 'Judul', 'Tanggal', 'Sales', 'Customer', 'Grand Total', 'FU Terakhir', 'Status', 'Ket. Lost'], ...pipeline.map(h => [h.qo_number, h.title, h.date, h.sales_name, h.customer_snapshot?.company, h.grand_total, h.last_fu, h.status, h.lost_reason])]
   const csv = r.map(row => row.map(c => `"${(c || '').toString().replace(/"/g, '""')}"`).join(',')).join('\n')
   const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv); a.download = 'GSO_Pipeline.csv'; a.click()
   toast('Pipeline diekspor!')
