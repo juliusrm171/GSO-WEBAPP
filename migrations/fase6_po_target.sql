@@ -17,14 +17,17 @@ create table if not exists public.purchase_orders (
   created_at timestamptz default now()
 );
 
--- 2. Target sales per bulan (Rupiah), di-set admin/super admin
+-- 2. Target sales per bulan: omset (Rupiah) + jumlah visit, di-set admin/super admin
 create table if not exists public.sales_targets (
   id uuid primary key default gen_random_uuid(),
   sales_id uuid references public.profiles(id) on delete cascade,
   period text not null, -- format 'YYYY-MM'
   target numeric not null default 0,
+  visit_target int not null default 0,
   unique (sales_id, period)
 );
+-- (kalau tabel sudah terlanjur dibuat tanpa kolom ini:)
+alter table public.sales_targets add column if not exists visit_target int not null default 0;
 
 -- 3. RLS: semua bisa lihat, tulis hanya admin/super_admin
 alter table public.purchase_orders enable row level security;

@@ -705,10 +705,7 @@ export async function renderApp(container, user, logout) {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
         <div class="chd" style="margin-bottom:0;">Rekap Visit Bulan Ini</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#64748b;">
-          Target/bulan:
-          <input type="number" id="visit-target" style="width:55px;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;" onchange="saveVisitTarget(this.value)">
-        </div>
+        <div style="font-size:11px;color:#94a3b8;">🎯 Target visit diatur di tab <b>PO</b> per sales per bulan</div>
       </div>
       <div id="visit-monthly"></div>
     </div>
@@ -958,7 +955,7 @@ export async function renderApp(container, user, logout) {
     updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
     vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList,
-    loadPOs, renderPO, savePO, delPO, renderTargets, saveTargetVal
+    loadPOs, renderPO, savePO, delPO, renderTargets, saveTargetVal, saveVisitTargetVal
   })
 }
 
@@ -1484,11 +1481,12 @@ function renderVisitStats() {
   const custCount = new Set(mv.map(v => v.customer_name)).size
   const myName = profiles.find(p => p.id === currentUser?.id)?.name || (currentUser?.email || '').split('@')[0]
   const myVisits = mv.filter(v => v.created_by === currentUser?.id).length
+  const myTarget = visitTargetOf(currentUser?.id)
   el.innerHTML = `
     <div class="sc"><div class="sn">${total}</div><div class="sl">Total Visit Bulan Ini</div></div>
     <div class="sc"><div class="sn">${myVisits}</div><div class="sl">Visit Saya Bulan Ini</div></div>
     <div class="sc"><div class="sn">${custCount}</div><div class="sl">Customer Dikunjungi</div></div>
-    <div class="sc"><div class="sn">${visitTarget}</div><div class="sl">Target per Sales</div></div>
+    <div class="sc"><div class="sn">${myTarget}</div><div class="sl">Target Visit Saya</div></div>
   `
 }
 
@@ -1505,21 +1503,23 @@ function renderVisitMonthly() {
   const now = new Date()
   const dayOfMonth = now.getDate()
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  const expectedByNow = visitTarget * (dayOfMonth / daysInMonth)
 
   if (!allSales.length) { el.innerHTML = '<div class="empty">Belum ada data sales.</div>'; return }
 
   el.innerHTML = allSales.map(name => {
+    const pid = profiles.find(p => p.name === name)?.id
+    const tgt = visitTargetOf(pid)
+    const expectedByNow = tgt * (dayOfMonth / daysInMonth)
     const count = mv.filter(v => (v.profiles?.name || v.sales_name) === name).length
-    const pct = Math.min((count / visitTarget) * 100, 100)
+    const pct = Math.min((count / (tgt || 1)) * 100, 100)
     const onTrack = count >= expectedByNow
-    const color = count >= visitTarget ? '#16a34a' : onTrack ? '#3b82f6' : '#f59e0b'
+    const color = count >= tgt ? '#16a34a' : onTrack ? '#3b82f6' : '#f59e0b'
     return `<div class="vm-row">
       <div class="vm-name">${name}</div>
       <div class="vm-track"><div class="vm-fill" style="width:${Math.max(pct, count > 0 ? 10 : 0)}%;background:${color};">${count > 0 ? count : ''}</div></div>
       <div class="vm-stat">
-        ${count}/${visitTarget}
-        <span class="vm-badge ${onTrack ? 'ontrack' : 'behind'}">${count >= visitTarget ? '✓ Tercapai' : onTrack ? 'On Track' : 'Behind'}</span>
+        ${count}/${tgt}
+        <span class="vm-badge ${onTrack ? 'ontrack' : 'behind'}">${count >= tgt ? '✓ Tercapai' : onTrack ? 'On Track' : 'Behind'}</span>
       </div>
     </div>`
   }).join('')
@@ -1782,18 +1782,32 @@ function renderTargets() {
   const team = profiles.filter(p => p.role !== 'engineer')
   el.innerHTML = team.map(p => {
     const t = targets.find(x => x.sales_id === p.id && x.period === period)
-    const tv = +(t?.target || 0)
+    const tv = +(t?.target || 0), vt = +(t?.visit_target || 0)
     const ach = pos.filter(x => x.sales_id === p.id && (x.po_date || '').startsWith(period)).reduce((s, x) => s + (+x.amount || 0), 0)
+    const vAch = visits.filter(v => (v.created_by === p.id || (v.profiles?.name || v.sales_name) === p.name) && (v.visit_date || '').startsWith(period)).length
     const pct = tv > 0 ? Math.round(ach / tv * 100) : 0
-    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9;font-size:12px;flex-wrap:wrap;">
-      <div style="width:140px;font-weight:600;">${p.name || '-'}</div>
-      <div style="display:flex;align-items:center;gap:5px;">Target:
-        ${isAdmin() ? `<input type="number" value="${tv || ''}" placeholder="0" onchange="saveTargetVal('${p.id}','${period}',this.value)" style="width:130px;padding:4px 7px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;text-align:right;">` : `<b>${fmt(tv)}</b>`}
+    const vPct = vt > 0 ? Math.round(vAch / vt * 100) : 0
+    return `<div style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:12px;">
+      <div style="font-weight:600;margin-bottom:4px;">${p.name || '-'}</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+        <div style="display:flex;align-items:center;gap:5px;">💰 Target Omset:
+          ${isAdmin() ? `<input type="number" value="${tv || ''}" placeholder="0" onchange="saveTargetVal('${p.id}','${period}',this.value)" style="width:130px;padding:4px 7px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;text-align:right;">` : `<b>${fmt(tv)}</b>`}
+        </div>
+        <div>Achieve: <b style="color:#002060;">${fmt(ach)}</b></div>
+        <div style="flex:1;min-width:140px;display:flex;align-items:center;gap:6px;">
+          <div class="bar-track" style="flex:1;"><div style="position:absolute;left:0;top:0;bottom:0;width:${Math.min(pct, 100)}%;background:${pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#002060'};border-radius:9px;"></div></div>
+          <b style="color:${pct >= 100 ? '#16a34a' : '#64748b'};white-space:nowrap;">${tv > 0 ? pct + '%' : '—'}</b>
+        </div>
       </div>
-      <div>Achieve: <b style="color:#002060;">${fmt(ach)}</b></div>
-      <div style="flex:1;min-width:140px;display:flex;align-items:center;gap:6px;">
-        <div class="bar-track" style="flex:1;"><div style="position:absolute;left:0;top:0;bottom:0;width:${Math.min(pct, 100)}%;background:${pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#002060'};border-radius:9px;"></div></div>
-        <b style="color:${pct >= 100 ? '#16a34a' : '#64748b'};white-space:nowrap;">${tv > 0 ? pct + '%' : '—'}</b>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:5px;">📍 Target Visit:
+          ${isAdmin() ? `<input type="number" value="${vt || ''}" placeholder="0" onchange="saveVisitTargetVal('${p.id}','${period}',this.value)" style="width:70px;padding:4px 7px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;text-align:right;">` : `<b>${vt}</b>`}
+        </div>
+        <div>Visit: <b style="color:#002060;">${vAch}</b></div>
+        <div style="flex:1;min-width:140px;display:flex;align-items:center;gap:6px;">
+          <div class="bar-track" style="flex:1;"><div style="position:absolute;left:0;top:0;bottom:0;width:${Math.min(vPct, 100)}%;background:${vPct >= 100 ? '#22c55e' : vPct >= 60 ? '#f59e0b' : '#3b82f6'};border-radius:9px;"></div></div>
+          <b style="color:${vPct >= 100 ? '#16a34a' : '#64748b'};white-space:nowrap;">${vt > 0 ? vPct + '%' : '—'}</b>
+        </div>
       </div>
     </div>`
   }).join('') || '<div class="empty">Belum ada data sales.</div>'
@@ -1802,11 +1816,28 @@ function renderTargets() {
 async function saveTargetVal(salesId, period, val) {
   if (!guardAdmin()) return
   try {
-    const t = await setTarget(salesId, period, +(val || 0))
+    const t = await setTarget(salesId, period, { target: +(val || 0) })
     const i = targets.findIndex(x => x.sales_id === salesId && x.period === period)
     if (i >= 0) targets[i] = t; else targets.push(t)
-    renderTargets(); toast('Target tersimpan')
+    renderTargets(); toast('Target omset tersimpan')
   } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function saveVisitTargetVal(salesId, period, val) {
+  if (!guardAdmin()) return
+  try {
+    const t = await setTarget(salesId, period, { visit_target: +(val || 0) })
+    const i = targets.findIndex(x => x.sales_id === salesId && x.period === period)
+    if (i >= 0) targets[i] = t; else targets.push(t)
+    renderTargets(); renderVisitStats(); renderVisitMonthly()
+    toast('Target visit tersimpan')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+// Target visit per sales (fallback ke target global lama kalau belum di-set)
+function visitTargetOf(profileId, period) {
+  const t = targets.find(x => x.sales_id === profileId && x.period === (period || curMonth()))
+  return t && +t.visit_target > 0 ? +t.visit_target : visitTarget
 }
 
 // ── KANVASING → DATABASE (admin melengkapi detail lewat form di tab Database) ──

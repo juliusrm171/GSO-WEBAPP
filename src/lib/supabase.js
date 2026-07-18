@@ -208,9 +208,9 @@ export async function getTargets() {
   return data
 }
 
-export async function setTarget(sales_id, period, target) {
+export async function setTarget(sales_id, period, fields) {
   const { data, error } = await supabase.from('sales_targets')
-    .upsert({ sales_id, period, target }, { onConflict: 'sales_id,period' })
+    .upsert({ sales_id, period, ...fields }, { onConflict: 'sales_id,period' })
     .select().single()
   if (error) throw error
   return data
