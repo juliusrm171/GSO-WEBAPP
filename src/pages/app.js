@@ -906,7 +906,7 @@ export async function renderApp(container, user, logout) {
     openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo,
     updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
-    vRelatedFill, custFromVisit
+    vRelatedFill, custFromVisit, togglePipVisits
   })
 }
 
@@ -1796,6 +1796,18 @@ function renderPip() {
 
   const bd = document.getElementById('pip-bd'); if (!bd) return
 
+  // Report visit yang ter-link ke shodan/penawaran
+  const visitsOf = (type, id) => visits.filter(v => v.related_type === type && v.related_id === id)
+  const visitReportRow = (list) => `<tr><td colspan="8" style="background:#f8fafc;padding:8px 14px;border-left:3px solid #002060;">
+    <div style="font-weight:600;font-size:11px;color:#002060;margin-bottom:5px;">📍 Report Visit (${list.length})</div>
+    ${list.map(v => `<div style="padding:4px 0;border-bottom:1px solid #eef2f7;font-size:11px;">
+      <b>${fmtD(v.visit_date)}</b>
+      <span class="badge" style="font-size:9px;background:${v.visit_type === 'online' ? '#e0f2fe' : '#dcfce7'};color:${v.visit_type === 'online' ? '#0369a1' : '#166534'};">${v.visit_type === 'online' ? '💻 Online' : '🏢 Onsite'}</span>
+      ${v.purpose || ''} · ${v.profiles?.name || v.sales_name || '-'}${v.contact ? ' · ketemu ' + v.contact : ''}
+      ${v.notes ? `<div style="color:#64748b;margin-top:2px;">${v.notes}</div>` : ''}
+    </div>`).join('')}
+  </td></tr>`
+
   const merged = [
     ...filtered.map(h => ({ type: 'q', d: h.date || h.created_at, row: h })),
     ...shFiltered.map(s => ({ type: 's', d: s.created_at, row: s }))
@@ -1806,37 +1818,49 @@ function renderPip() {
       const s = m.row
       const editable = canEditShodan(s)
       const isMe = s.created_by === currentUser?.id
+      const vList = visitsOf('shodan', s.id)
+      const vBtn = vList.length ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="togglePipVisits('s:${s.id}')">📍 ${vList.length} visit</button>` : ''
+      const expanded = expandedPipRow === 's:' + s.id ? visitReportRow(vList) : ''
       return `<tr style="background:#fffbeb;">
         <td style="white-space:nowrap;"><span class="badge" style="background:#fef3c7;color:#92400e;">SHODAN</span>${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
         <td style="white-space:nowrap;font-size:10px;">${s.created_at ? new Date(s.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
         <td style="font-size:11px;color:#64748b;">${s.profiles?.name || '-'}</td>
         <td>${s.customer_name || '-'}${s.contact ? `<div style="font-size:10px;color:#94a3b8;">${s.contact}</div>` : ''}</td>
-        <td style="color:#64748b;font-size:11px;">${s.title || '-'}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${s.notes}</div>` : ''}${canQuote() && s.status === 'Open' ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="shodanToQuo('${s.id}')">→ Quotation</button>` : ''}</td>
+        <td style="color:#64748b;font-size:11px;">${s.title || '-'}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${s.notes}</div>` : ''}${canQuote() && s.status === 'Open' ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="shodanToQuo('${s.id}')">→ Quotation</button>` : ''}${vBtn}</td>
         <td style="text-align:right;font-weight:600;white-space:nowrap;color:#92400e;">${fmt(+s.est_value || 0)}</td>
         <td><input type="date" value="${s.last_fu || ''}" onchange="updShFU('${s.id}',this.value)" ${editable ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
         <td>${editable ? `<select onchange="updShStatus('${s.id}',this.value)">${['Open', 'Won', 'Lost'].map(x => `<option${s.status === x ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${s.status}</span>`}${s.status === 'Lost' && s.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${s.lost_reason}</div>` : ''}${editable ? ` <button class="bdel" style="font-size:10px;" onclick="delShodan('${s.id}')">🗑</button>` : ''}</td>
-      </tr>`
+      </tr>${expanded}`
     }
     const h = m.row
     const cust = h.customer_snapshot || {}
     const desc = h.title || (h.items || []).filter(r => r.t === 'i').map(r => r.name).join(', ').slice(0, 50)
     const salesName = h.profiles?.name || h.sales_name || '-'
     const isMe = h.created_by === currentUser?.id
+    const vList = visitsOf('pipeline', h.id)
+    const vBtn = vList.length ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="togglePipVisits('q:${h.id}')">📍 ${vList.length} visit</button>` : ''
+    const expanded = expandedPipRow === 'q:' + h.id ? visitReportRow(vList) : ''
     return `<tr>
       <td style="font-weight:600;white-space:nowrap;">${h.qo_number || '-'}${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${h.date ? new Date(h.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
       <td style="font-size:11px;color:#64748b;">${salesName}</td>
       <td>${cust.company || '-'}</td>
-      <td style="color:#64748b;font-size:11px;">${desc || '-'}</td>
+      <td style="color:#64748b;font-size:11px;">${desc || '-'}${vBtn}</td>
       <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? fmt(h.grand_total) : '-'}</td>
       <td><input type="date" value="${h.last_fu || ''}" onchange="updFU('${h.id}',this.value)" ${(isAdmin() || (myRole === 'sales' && isMe)) ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
       <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}${h.status === 'Closed - Lost' && h.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${h.lost_reason}</div>` : ''}</td>
-    </tr>`
+    </tr>${expanded}`
   }).join('') || `<tr><td colspan="8" class="empty">Tidak ada data.</td></tr>`
 
   const ct = document.getElementById('pip-ct')
   if (ct) ct.textContent = merged.length + ' dari ' + (pipeline.length + shodans.filter(s => s.status !== 'Penawaran').length) + ' penawaran & shodan'
   renderFuAlerts()
+}
+
+let expandedPipRow = null
+function togglePipVisits(key) {
+  expandedPipRow = expandedPipRow === key ? null : key
+  renderPip()
 }
 
 // List perlu follow-up: tanpa update > 2 minggu, status masih berjalan
