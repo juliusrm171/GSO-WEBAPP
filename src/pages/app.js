@@ -304,6 +304,14 @@ function fmt(n) { if (!canSeeVal()) return 'Rp •••'; return 'Rp ' + Math.r
 function fmtPL(n) { return canSeeVal() ? 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') : 'Rp •••' }
 // Gambar produk: file lokal (public/img/products) atau URL website Hikrobot
 function imgSrc(f) { return f ? (f.startsWith('http') ? f : '/img/products/' + f) : '' }
+// Format singkat Rupiah: 8.000.000.000 → Rp 8M (miliar), 320.000.000 → Rp 320jt
+function fmtShort(n) {
+  if (!canSeeVal()) return 'Rp •••'
+  n = +n || 0
+  if (n >= 1e9) { const v = n / 1e9; return 'Rp ' + (v >= 10 ? Math.round(v) : (Math.round(v * 10) / 10).toLocaleString('id-ID')) + 'M' }
+  if (n >= 1e6) return 'Rp ' + Math.round(n / 1e6) + 'jt'
+  return fmt(n)
+}
 function fmtD(d) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-' }
 function gv(id) { return document.getElementById(id)?.value || '' }
 function calcR(r) { return r.qty * (r.price || 0) * (1 - (r.disc || 0) / 100) }
@@ -2167,7 +2175,7 @@ function renderPip() {
   shFiltered.forEach(s => { const m = SH_MAP[s.status]; if (m in stats) { stats[m]++; vals[m] += (+s.est_value || 0) } })
 
   const sg = document.getElementById('sg')
-  if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">${canSeeVal() ? 'Rp ' + ((vals[s] || 0) / 1e6).toFixed(0) + 'M' : 'Rp •••'}</div></div>`).join('')
+  if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">${fmtShort(vals[s] || 0)}</div></div>`).join('')
 
   const bd = document.getElementById('pip-bd'); if (!bd) return
 
