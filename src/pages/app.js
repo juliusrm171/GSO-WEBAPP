@@ -302,6 +302,8 @@ function guardAdmin() { if (!isAdmin()) { toast('Hanya admin yang bisa melakukan
 
 function fmt(n) { if (!canSeeVal()) return 'Rp •••'; return 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') }
 function fmtPL(n) { return canSeeVal() ? 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') : 'Rp •••' }
+// Gambar produk: file lokal (public/img/products) atau URL website Hikrobot
+function imgSrc(f) { return f ? (f.startsWith('http') ? f : '/img/products/' + f) : '' }
 function fmtD(d) { return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-' }
 function gv(id) { return document.getElementById(id)?.value || '' }
 function calcR(r) { return r.qty * (r.price || 0) * (1 - (r.disc || 0) / 100) }
@@ -1246,7 +1248,7 @@ function renderRows() {
     return `<tr>
       <td style="text-align:center;color:#94a3b8;">${nc}</td>
       <td><input value="${r.part || ''}" placeholder="Part no. (ketik utk cari)" autocomplete="off" oninput="partSearch(${r.id},this)" onblur="hidePartDrop()"></td>
-      <td>${r.img ? `<img src="/img/products/${r.img}" style="height:30px;float:left;margin:2px 6px 2px 0;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('/img/products/${r.img}','${(r.part || '').replace(/'/g, "\\'")}')">` : ''}<textarea oninput="uf(${r.id},'name',this.value)" style="width:${r.img ? 'calc(100% - 45px)' : '100%'};min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
+      <td>${r.img ? `<img src="${imgSrc(r.img)}" onerror="this.style.display='none'" style="height:30px;float:left;margin:2px 6px 2px 0;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('${imgSrc(r.img)}','${(r.part || '').replace(/'/g, "\\'")}')">` : ''}<textarea oninput="uf(${r.id},'name',this.value)" style="width:${r.img ? 'calc(100% - 45px)' : '100%'};min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
         <button onclick="rows.find(x=>x.id===${r.id}).subs.push({id:++ctr,text:''});renderRows();" style="font-size:10px;color:#94a3b8;background:none;border:none;cursor:pointer;">+ sub</button></td>
       <td><input type="number" value="${r.qty}" min="1" oninput="uf(${r.id},'qty',this.value)" style="text-align:right;"></td>
       <td><input value="${r.unit || ''}" oninput="uf(${r.id},'unit',this.value)"></td>
@@ -1300,7 +1302,7 @@ function renderPrev() {
     if (r.t === 'n') return `<tr><td colspan="7" style="color:#888;font-size:9px;">${(r.text || '').replace(/\n/g, '<br>')}</td></tr>`
     nc++
     const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#aaa;">${nc}.${si + 1}</td><td></td><td colspan="5">${s.text || ''}</td></tr>`).join('')
-    const pvImg = r.img ? `<div><img src="/img/products/${r.img}" style="height:38px;margin-top:3px;"></div>` : ''
+    const pvImg = r.img ? `<div><img src="${imgSrc(r.img)}" onerror="this.style.display='none'" style="height:38px;margin-top:3px;"></div>` : ''
     if (gInfo.inGroup.has(r.id)) return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}${pvImg}</td><td class="r">${r.qty}</td><td class="r"></td><td class="r"></td><td class="r"></td></tr>${subs}`
     return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}${pvImg}</td><td class="r">${r.qty}</td><td class="r">${fmt(r.price || 0)}</td><td class="r">${r.disc ? r.disc + '%' : '-'}</td><td class="r">${fmt(calcR(r))}</td></tr>${subs}`
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:8px;">Belum ada item</td></tr>'
@@ -1317,7 +1319,7 @@ async function doPDF() {
   const imgFiles = [...new Set(rows.filter(r => r.t === 'i' && r.img).map(r => r.img))]
   const images = {}
   await Promise.all(imgFiles.map(f =>
-    fetch('/img/products/' + f)
+    fetch(imgSrc(f))
       .then(r => { if (!r.ok) throw 0; return r.blob() })
       .then(b => new Promise(res => { const fr = new FileReader(); fr.onload = () => { images[f] = fr.result; res() }; fr.onerror = () => res(); fr.readAsDataURL(b) }))
       .catch(() => {})
@@ -2061,7 +2063,7 @@ function renderPL() {
   body.innerHTML = slice.length ? slice.map(([name, part, price, catI, img], i) => {
     return `<tr>
       <td style="color:#94a3b8;font-size:11px;">${start + i + 1}</td>
-      <td style="width:44px;">${img ? `<img src="/img/products/${img}" loading="lazy" style="height:36px;max-width:44px;object-fit:contain;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('/img/products/${img}','${part.replace(/'/g, "\\'")}')">` : ''}</td>
+      <td style="width:44px;">${img ? `<img src="${imgSrc(img)}" loading="lazy" onerror="this.style.display='none'" style="height:36px;max-width:44px;object-fit:contain;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('${imgSrc(img)}','${part.replace(/'/g, "\\'")}')">` : ''}</td>
       <td style="font-weight:600;font-size:12px;white-space:nowrap;">${part}</td>
       <td style="font-size:11px;color:#64748b;">${name && name !== part ? name : '—'}</td>
       <td><span class="badge">${PL_CATS[catI]}</span></td>

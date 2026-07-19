@@ -69,7 +69,7 @@ Terakhir karena mengonsumsi data PO, target, visit, customer.
 - ✅ **Kolom Part Number & Description terpisah** di pricelist
 - ✅ **Nama seri resmi Hikrobot** + spesifikasi sebagai description (2.887 item)
 - ✅ **Gambar produk** — 230 gambar dari file DELA, terpasang di 1.341 item; tampil di pricelist, editor quotation, preview, dan PDF
-- ⏳ **Crawl website Hikrobot** untuk nama/gambar per-item yang tersisa (menunggu blokir WAF lepas — jalankan pelan)
+- ✅ **Crawl website Hikrobot** (19 Jul) — 1.787 produk; 1.079 nama diganti nama resmi website (mis. "Enterprise USB-Wired Handheld Code Reader"), 375 gambar tambahan via URL website; total 1.716 item bergambar
 - ✅ **Sort by resolusi** (↑/↓, dihitung dari total piksel di description)
 - ✅ **Struktur multi-brand** — `PL_BRANDS` + filter brand di pricelist; tambah brand baru = tambah data dengan brand index baru
 
