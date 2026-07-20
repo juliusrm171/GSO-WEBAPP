@@ -4,8 +4,13 @@ import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
 const CSS = `<style>
+:root{
+  --navy:#002060;--blue:#2563eb;--green:#059669;--amber:#d97706;--red:#dc2626;
+  --ink:#0f172a;--muted:#64748b;--faint:#94a3b8;--line:#e6ebf2;--bg:#f4f6fb;
+}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',system-ui,sans-serif;background:#f0f3f8;color:#1e293b;font-size:13px;}
+h1,h2,h3,.db-greet,.sn,.kpi-n,.hd-xl{font-family:'Plus Jakarta Sans','Inter',system-ui,sans-serif;letter-spacing:-.01em;}
 nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:sticky;top:0;z-index:50;box-shadow:0 2px 8px rgba(0,32,96,.3);}
 .nlogo{display:flex;align-items:center;gap:8px;padding:.6rem .5rem;margin-right:1.25rem;font-weight:600;font-size:12.5px;color:#fff;white-space:nowrap;letter-spacing:.01em;}
 .nlogo-img{width:24px;height:24px;object-fit:contain;flex-shrink:0;background:#fff;border-radius:50%;padding:3px;}
@@ -122,11 +127,12 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .pg{display:flex;gap:5px;margin-top:.65rem;justify-content:center;align-items:center;font-size:12px;}
 .pg button{padding:4px 12px;border:1px solid #e2e8f0;border-radius:5px;background:#fff;cursor:pointer;font-size:11px;}
 .pg button:hover{background:#f8fafc;}
-.sg{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:.9rem;}
-.sc{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:.7rem .9rem;text-align:center;}
-.sn{font-size:20px;font-weight:600;color:#002060;}
-.sl{font-size:10px;color:#64748b;}
-.sv{font-size:10px;color:#94a3b8;margin-top:1px;}
+.sg{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:.9rem;}
+.sc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:.75rem .9rem;text-align:left;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.sc::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--sc-accent,#002060);}
+.sn{font-size:19px;font-weight:800;color:var(--ink);letter-spacing:-.02em;}
+.sl{font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.03em;margin-top:2px;}
+.sv{font-size:10px;color:var(--faint);margin-top:1px;}
 .piptbl{width:100%;border-collapse:collapse;font-size:11px;}
 .piptbl th{background:#002060;color:#fff;padding:7px 8px;text-align:left;font-size:10px;white-space:nowrap;}
 .piptbl td{padding:5px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
@@ -3942,11 +3948,11 @@ function renderDashboard() {
 
   const sg = document.getElementById('dash-stats')
   if (sg) sg.innerHTML = `
-    <div class="sc"><div class="sn">${fmt(yRev)}</div><div class="sl">Revenue ${nowYear} (PO)</div><div class="sv">${poYear.length} PO</div></div>
-    <div class="sc"><div class="sn">${fmt(mRev)}</div><div class="sl">Revenue Bulan Ini</div><div class="sv">${mPct !== null ? mPct + '% dari target' : 'target belum di-set'}</div></div>
-    <div class="sc"><div class="sn">${fmt(activeVal)}</div><div class="sl">Pipeline Aktif</div><div class="sv">Open + Nego + On Hold</div></div>
-    <div class="sc"><div class="sn">${winRate}%</div><div class="sl">Win Rate</div><div class="sv">${wonCount}/${totalQuo} penawaran</div></div>
-    <div class="sc"><div class="sn">${customers.length}</div><div class="sl">Total Customer</div></div>
+    <div class="sc" style="--sc-accent:#059669;"><div class="sn">${fmt(yRev)}</div><div class="sl">Revenue ${nowYear} (PO)</div><div class="sv">${poYear.length} PO</div></div>
+    <div class="sc" style="--sc-accent:#2563eb;"><div class="sn">${fmt(mRev)}</div><div class="sl">Revenue Bulan Ini</div><div class="sv">${mPct !== null ? mPct + '% dari target' : 'target belum di-set'}</div></div>
+    <div class="sc" style="--sc-accent:#0891b2;"><div class="sn">${fmt(activeVal)}</div><div class="sl">Pipeline Aktif</div><div class="sv">Open + Nego + On Hold</div></div>
+    <div class="sc" style="--sc-accent:#d97706;"><div class="sn">${winRate}%</div><div class="sl">Win Rate</div><div class="sv">${wonCount}/${totalQuo} penawaran</div></div>
+    <div class="sc" style="--sc-accent:#002060;"><div class="sn">${customers.length}</div><div class="sl">Total Customer</div></div>
   `
 
   renderSalesChart()
