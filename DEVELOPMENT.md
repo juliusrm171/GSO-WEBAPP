@@ -113,7 +113,7 @@ Tab baru yang menggabungkan seluruh siklus project dalam satu tempat. Termasuk *
 
 - **Tracking project berjalan:** satu project meng-link quotation, PO, dan progress-nya; tahapan status: **Inquiry → Penawaran → PO → Pengadaan → Delivery → Instalasi/Commissioning → Selesai** (+ status Batal)
 - **Komponen per project** (hasil meeting 20 Jul):
-  - **BOM list** — daftar bill of material per project (part, qty, status pengadaan)
+  - **BOM list** — format mengikuti Excel Bomlist GSO (contoh: PT Yasulor AI Inspection): tabel bergrup (AREA SCAN CAMERA, LIGHTING, dst.), kolom STATUS BARANG (INDENT/READY/ON DELIVERY/TIBA), BRAND, CATEGORY, PART, PART NUMBER, PART NAME, QTY, HARGA, TOTAL, DETAIL; **import .xlsx dengan preview** (opsi ganti BOM lama) + **export .xlsx** layout sama; harga disembunyikan untuk engineer
   - **Design** — file drawing/desain (upload ke Supabase Storage)
   - **Report** — laporan progress/hasil pekerjaan
   - **Timeline** — jadwal & milestone project (instalasi/commissioning termasuk di sini)
