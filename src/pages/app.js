@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getStockMoves, addStockMove, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks } from '../lib/supabase.js'
 import * as XLSX from 'xlsx'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
@@ -863,30 +863,19 @@ export async function renderApp(container, user, logout) {
     </div>
   </div>
 
-  <!-- STOCK (FASE 9) -->
+  <!-- STOCK (FASE 9 — murni daftar stock barang) -->
   <div id="p-stock" class="page">
     <div class="sg" id="stock-stats"></div>
     <div class="card" id="stock-form-card">
-      <div class="chd">📦 Input Barang Masuk / Keluar (khusus admin)</div>
+      <div class="chd">📦 Tambah / Update Barang Manual (khusus admin)</div>
       <div class="g4" style="margin-bottom:8px;">
         <div class="fld"><label>Part Number</label><input id="sm-part" list="stock-dl" placeholder="MV-CS060-10GM..." onchange="smPartChange()"></div>
         <div class="fld"><label>Nama Barang</label><input id="sm-name" placeholder="otomatis kalau part sudah ada"></div>
-        <div class="fld"><label>Tipe Mutasi</label><select id="sm-type">
-          <option value="in">📥 Barang Masuk</option>
-          <option value="out">📤 Barang Keluar</option>
-          <option value="adjust">🛠 Penyesuaian (set saldo)</option>
-        </select></div>
-        <div class="fld"><label>Qty</label><input id="sm-qty" type="number" min="0" step="any"></div>
-      </div>
-      <div class="g3" style="margin-bottom:8px;">
-        <div class="fld"><label>Tanggal</label><input type="date" id="sm-date"></div>
+        <div class="fld"><label>Qty (saldo)</label><input id="sm-qty" type="number" min="0" step="any"></div>
         <div class="fld"><label>Satuan</label><input id="sm-unit" placeholder="unit / pcs / meter"></div>
-        <div class="fld"><label>Catatan</label><input id="sm-notes" placeholder="No. surat jalan, supplier, dll"></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <button class="bs" style="padding:7px 12px;font-size:12px;" onclick="pickStockPhoto()">📷 Foto Barang</button>
-        <span id="sm-photo-name" style="font-size:11px;color:#16a34a;"></span>
-        <button class="bp" style="padding:7px 14px;font-size:12px;" id="btn-save-move" onclick="saveStockMove()">💾 Simpan Mutasi</button>
+        <button class="bp" style="padding:7px 14px;font-size:12px;" id="btn-save-move" onclick="saveStockItemManual()">💾 Simpan</button>
         <span style="flex:1;"></span>
         <button class="bxs" id="btn-stock-import" onclick="pickImportStock()" title="Upload file export stock dari Accurate">📥 Import Stock Accurate</button>
         <button class="bxs" id="btn-stock-export" onclick="exportStockXlsx()">⬇ Excel</button>
@@ -897,13 +886,9 @@ export async function renderApp(container, user, logout) {
       <div style="display:flex;gap:7px;align-items:center;margin-bottom:.7rem;flex-wrap:wrap;">
         <div class="chd" style="margin:0;flex:1;">Daftar Stock (<span id="stock-count">0</span> item)</div>
         <input placeholder="Cari part number / nama..." oninput="renderStock(this.value)" style="padding:6px 10px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;min-width:180px;">
-        <button class="bs" style="padding:6px 11px;font-size:11px;" onclick="loadStock().then(()=>{renderStock('');renderStockMoves()})">↻ Refresh</button>
+        <button class="bs" style="padding:6px 11px;font-size:11px;" onclick="loadStock().then(()=>renderStock(''))">↻ Refresh</button>
       </div>
       <div id="stock-list"></div>
-    </div>
-    <div class="card">
-      <div class="chd">🕐 Riwayat Mutasi Terakhir</div>
-      <div id="stock-moves"></div>
     </div>
     <datalist id="stock-dl"></datalist>
   </div>
@@ -1228,7 +1213,7 @@ export async function renderApp(container, user, logout) {
     renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup, setCustAreaFilter, pickAttach,
     pickImportPO, confirmImportPO, cancelImportPO, poImpToggle, exportPOXlsx, exportCustXlsx,
     saveCompanyTarget, setPOSales,
-    smPartChange, pickStockPhoto, saveStockMove, renderStock, renderStockMoves, delStockItem, loadStock,
+    smPartChange, saveStockItemManual, updStockQty, renderStock, delStockItem, loadStock,
     pickImportStock, confirmImportStock, cancelImportStock, stockImpToggle, exportStockXlsx,
     togglePrjForm, savePrj, renderPrjList, togglePrjDetail, updPrjStage, delPrj, loadProjectsData,
     addBomRow, updBomStatus, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
@@ -1370,7 +1355,7 @@ function nav(name) {
   if (name === 'dashboard') { myRole === 'engineer' ? renderEngineerDash() : renderDashboard() }
   if (name === 'visit') renderVisits()
   if (name === 'database') { renderCustList(''); renderProdList('') }
-  if (name === 'stock') { renderStock(''); renderStockMoves() }
+  if (name === 'stock') renderStock('')
   if (name === 'project') renderPrjList()
 }
 
@@ -2383,13 +2368,11 @@ function exportCustXlsx() {
   toast('Excel terdownload ✓')
 }
 
-// ═══════════ FASE 9: STOCK & PENERIMAAN BARANG ═══════════
-let stockItems = [], stockMoves = [], stockPhotoFile = null
+// ═══════════ FASE 9: STOCK (murni daftar stock barang) ═══════════
+let stockItems = []
 
 async function loadStock() {
-  try {
-    ;[stockItems, stockMoves] = await Promise.all([getStockItems(), getStockMoves()])
-  } catch (e) { console.error(e) }
+  try { stockItems = await getStockItems() } catch (e) { console.error(e) }
 }
 function smPartChange() {
   const part = document.getElementById('sm-part').value.trim()
@@ -2397,65 +2380,30 @@ function smPartChange() {
   if (it) {
     document.getElementById('sm-name').value = it.name || ''
     document.getElementById('sm-unit').value = it.unit || ''
+    document.getElementById('sm-qty').value = +it.qty
   }
 }
-function pickStockPhoto() {
-  let inp = document.getElementById('stock-photo-input')
-  if (!inp) {
-    inp = document.createElement('input')
-    inp.type = 'file'; inp.id = 'stock-photo-input'; inp.accept = 'image/*'; inp.capture = 'environment'; inp.style.display = 'none'
-    document.body.appendChild(inp)
-  }
-  inp.onchange = () => {
-    stockPhotoFile = inp.files[0] || null
-    document.getElementById('sm-photo-name').textContent = stockPhotoFile ? '✓ ' + stockPhotoFile.name.slice(0, 25) : ''
-    inp.value = ''
-  }
-  inp.click()
-}
-async function saveStockMove() {
+async function saveStockItemManual() {
   if (!guardAdmin()) return
   const part = document.getElementById('sm-part').value.trim()
-  const qty = +(document.getElementById('sm-qty').value || 0)
-  const type = document.getElementById('sm-type').value
   if (!part) { toast('Part number wajib diisi', false); return }
-  if (qty <= 0 && type !== 'adjust') { toast('Qty harus lebih dari 0', false); return }
   const btn = document.getElementById('btn-save-move')
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'
   try {
-    // 1) pastikan item ada
-    let item = stockItems.find(i => i.part_number.toLowerCase() === part.toLowerCase())
-    const name = document.getElementById('sm-name').value.trim()
-    const unit = document.getElementById('sm-unit').value.trim() || 'unit'
-    if (!item) {
-      item = await upsertStockItem({ part_number: part, name, unit, qty: 0 })
-      stockItems.push(item)
-    }
-    // 2) hitung saldo baru
-    let newQty = +item.qty
-    if (type === 'in') newQty += qty
-    else if (type === 'out') {
-      if (qty > newQty) { toast(`Stock tidak cukup — saldo ${item.part_number}: ${newQty}`, false); btn.disabled = false; btn.textContent = '💾 Simpan Mutasi'; return }
-      newQty -= qty
-    } else newQty = qty // adjust = set saldo
-    // 3) foto (opsional)
-    let photo_url = null
-    if (stockPhotoFile) {
-      const att = await uploadAttachment(stockPhotoFile, 'stock')
-      photo_url = att.url
-    }
-    // 4) simpan move + update saldo
-    const mv = await addStockMove({ item_id: item.id, move_type: type, qty, move_date: document.getElementById('sm-date').value || new Date().toISOString().slice(0, 10), notes: document.getElementById('sm-notes').value, photo_url })
-    stockMoves.unshift(mv)
-    const u = await updateStockItem(item.id, { qty: newQty, ...(name && name !== item.name ? { name } : {}), ...(unit !== item.unit ? { unit } : {}) })
-    const i = stockItems.findIndex(x => x.id === item.id); if (i >= 0) stockItems[i] = u
-    // reset form
-    ;['sm-part', 'sm-name', 'sm-qty', 'sm-notes'].forEach(id => document.getElementById(id).value = '')
-    stockPhotoFile = null; document.getElementById('sm-photo-name').textContent = ''
-    renderStock(''); renderStockMoves()
-    toast(`${type === 'in' ? 'Barang masuk' : type === 'out' ? 'Barang keluar' : 'Saldo di-set'}: ${part} → saldo ${newQty}`)
+    const item = await upsertStockItem({
+      part_number: part,
+      name: document.getElementById('sm-name').value.trim() || null,
+      unit: document.getElementById('sm-unit').value.trim() || 'unit',
+      qty: +(document.getElementById('sm-qty').value || 0),
+      updated_at: new Date().toISOString()
+    })
+    const i = stockItems.findIndex(x => x.part_number.toLowerCase() === part.toLowerCase())
+    if (i >= 0) stockItems[i] = item; else stockItems.push(item)
+    ;['sm-part', 'sm-name', 'sm-qty', 'sm-unit'].forEach(id => document.getElementById(id).value = '')
+    renderStock('')
+    toast('Stock tersimpan: ' + part + ' = ' + (+item.qty))
   } catch (e) { toast('Gagal: ' + e.message, false) }
-  btn.disabled = false; btn.textContent = '💾 Simpan Mutasi'
+  btn.disabled = false; btn.textContent = '💾 Simpan'
 }
 function renderStock(q) {
   const el = document.getElementById('stock-list'); if (!el) return
@@ -2463,52 +2411,44 @@ function renderStock(q) {
   const f = ql ? stockItems.filter(i => (i.part_number + ' ' + (i.name || '')).toLowerCase().includes(ql)) : stockItems
   document.getElementById('stock-count').textContent = stockItems.length
   const st = document.getElementById('stock-stats')
-  if (st) {
-    const ym = new Date().toISOString().slice(0, 7)
-    const mvM = stockMoves.filter(m => (m.move_date || '').startsWith(ym))
-    st.innerHTML = `
-      <div class="sc"><div class="sn">${stockItems.length}</div><div class="sl">Jenis barang</div></div>
-      <div class="sc"><div class="sn">${stockItems.filter(i => +i.qty <= 0).length}</div><div class="sl">Stock habis</div></div>
-      <div class="sc"><div class="sn">${mvM.filter(m => m.move_type === 'in').length}</div><div class="sl">Masuk bulan ini</div></div>
-      <div class="sc"><div class="sn">${mvM.filter(m => m.move_type === 'out').length}</div><div class="sl">Keluar bulan ini</div></div>`
-  }
-  // datalist buat form
+  if (st) st.innerHTML = `
+    <div class="sc"><div class="sn">${stockItems.length}</div><div class="sl">Jenis barang</div></div>
+    <div class="sc"><div class="sn">${stockItems.reduce((s, i) => s + (+i.qty || 0), 0)}</div><div class="sl">Total qty semua item</div></div>
+    <div class="sc"><div class="sn" style="color:${stockItems.filter(i => +i.qty <= 0).length ? '#dc2626' : '#002060'};">${stockItems.filter(i => +i.qty <= 0).length}</div><div class="sl">Stock habis</div></div>`
   const dl = document.getElementById('stock-dl')
   if (dl) dl.innerHTML = stockItems.map(i => `<option value="${i.part_number}">`).join('')
   el.innerHTML = f.length ? f.map(i => `
     <div class="dbi">
       <div style="flex:1;">
         <div class="dn">${i.part_number}</div>
-        <div class="dm">${i.name || '—'}${i.notes ? ' · ' + i.notes : ''}</div>
+        <div class="dm">${i.name || '—'}</div>
       </div>
       <div style="text-align:right;margin-right:8px;">
-        <div style="font-weight:700;font-size:14px;color:${+i.qty <= 0 ? '#dc2626' : '#002060'};">${+i.qty}</div>
+        ${isAdmin()
+          ? `<input type="number" value="${+i.qty}" min="0" step="any" onchange="updStockQty('${i.id}',this.value)" style="width:80px;padding:4px 7px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;text-align:right;font-weight:700;color:${+i.qty <= 0 ? '#dc2626' : '#002060'};">`
+          : `<div style="font-weight:700;font-size:14px;color:${+i.qty <= 0 ? '#dc2626' : '#002060'};">${+i.qty}</div>`}
         <div style="font-size:10px;color:#94a3b8;">${i.unit || 'unit'}</div>
       </div>
       ${isAdmin() ? `<button class="bdel" onclick="delStockItem('${i.id}')" title="Hapus item">🗑</button>` : ''}
-    </div>`).join('') : '<div class="empty">Belum ada data stock. Input mutasi atau import dari Accurate.</div>'
+    </div>`).join('') : '<div class="empty">Belum ada data stock. Tambah manual atau import dari Accurate.</div>'
 }
-function renderStockMoves() {
-  const el = document.getElementById('stock-moves'); if (!el) return
-  el.innerHTML = stockMoves.length ? stockMoves.slice(0, 50).map(m => `
-    <div class="dbi">
-      <div style="width:34px;font-size:16px;text-align:center;">${m.move_type === 'in' ? '📥' : m.move_type === 'out' ? '📤' : '🛠'}</div>
-      <div style="flex:1;">
-        <div class="dn" style="font-size:11.5px;">${m.stock_items?.part_number || '-'} · ${m.move_type === 'in' ? '+' : m.move_type === 'out' ? '−' : '='}${+m.qty}</div>
-        <div class="dm">${fmtD(m.move_date)} · ${m.profiles?.name || '-'}${m.notes ? ' · ' + m.notes : ''}</div>
-      </div>
-      ${m.photo_url ? `<a href="${m.photo_url}" target="_blank"><img src="${m.photo_url}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;"></a>` : ''}
-    </div>`).join('') : '<div class="empty">Belum ada mutasi.</div>'
+async function updStockQty(id, val) {
+  if (!guardAdmin()) return
+  try {
+    const u = await updateStockItem(id, { qty: +(val || 0) })
+    const i = stockItems.findIndex(x => x.id === id); if (i >= 0) stockItems[i] = u
+    renderStock(document.querySelector('#p-stock input[placeholder^="Cari"]')?.value || '')
+    toast(u.part_number + ' = ' + (+u.qty))
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 async function delStockItem(id) {
   if (!guardAdmin()) return
   const it = stockItems.find(x => x.id === id); if (!it) return
-  if (!confirm(`Hapus item ${it.part_number} beserta seluruh riwayat mutasinya?`)) return
+  if (!confirm(`Hapus item ${it.part_number} dari daftar stock?`)) return
   try {
     await deleteStockItem(id)
     stockItems = stockItems.filter(x => x.id !== id)
-    stockMoves = stockMoves.filter(m => m.item_id !== id)
-    renderStock(''); renderStockMoves(); toast('Item dihapus')
+    renderStock(''); toast('Item dihapus')
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
@@ -2603,15 +2543,11 @@ async function confirmImportStock() {
       const item = await upsertStockItem({ part_number: r.part_number, ...(r.name ? { name: r.name } : {}), unit: r.unit, qty: r.qty, updated_at: new Date().toISOString() })
       const i = stockItems.findIndex(x => x.part_number.toLowerCase() === r.part_number.toLowerCase())
       if (i >= 0) stockItems[i] = item; else stockItems.push(item)
-      if (r.oldQty !== r.qty) {
-        const mv = await addStockMove({ item_id: item.id, move_type: 'adjust', qty: r.qty, move_date: new Date().toISOString().slice(0, 10), notes: 'Import Accurate' })
-        stockMoves.unshift(mv)
-      }
       ok++
       if (btn && ok % 25 === 0) btn.textContent = `Mengimport… ${ok}/${chosen.length}`
     } catch (e) { fail++; console.error(r.part_number, e) }
   }
-  cancelImportStock(); renderStock(''); renderStockMoves()
+  cancelImportStock(); renderStock('')
   toast(`Import stock selesai: ${ok} barang${fail ? `, ${fail} gagal` : ''}`)
 }
 function exportStockXlsx() {
