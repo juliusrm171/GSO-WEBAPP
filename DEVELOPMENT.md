@@ -74,12 +74,11 @@ Terakhir karena mengonsumsi data PO, target, visit, customer.
 - ✅ **Sort by resolusi** (↑/↓, dihitung dari total piksel di description)
 - ✅ **Struktur multi-brand** — `PL_BRANDS` + filter brand di pricelist; tambah brand baru = tambah data dengan brand index baru
 
-## FASE 9 — Stock & Penerimaan Barang
-Independen — modul baru.
-
-- **Tab Stock baru:** diinput admin gudang; sales bisa lihat stock yang ada
-- **Barang masuk & keluar** dengan **foto** (upload ke Supabase Storage) untuk pendataan
-- *Open: role admin gudang (lihat Fase 1)*
+## FASE 9 — Stock & Penerimaan Barang ✅ SELESAI (20 Jul 2026)
+- **Tab Stock:** input mutasi masuk/keluar/penyesuaian oleh admin (admin gudang = role admin); semua role bisa lihat saldo
+- **Foto barang** per mutasi (kamera HP didukung, upload ke Supabase Storage); riwayat mutasi dengan thumbnail
+- **Import stock dari Accurate** (.xlsx, deteksi kolom fleksibel: No./Kode Barang + Kuantitas/Saldo) dengan preview baru-vs-update; **Export Excel**
+- **Mobile friendly:** form menumpuk di layar kecil, nav bisa digeser — import & input bisa dari HP
 
 ## FASE 10 — Customer per Area ✅ SELESAI (20 Jul 2026)
 Struktur **2 tingkat** (keputusan 20 Jul 2026): **Area Besar** (kota/wilayah) → **Area Kecil** (kawasan industri). Satu customer = satu area. Admin bisa tambah area besar/kecil sendiri kapan saja (lewat dropdown ➕ di form customer).
@@ -109,8 +108,8 @@ Semua jalan di sisi browser (SheetJS), tanpa server tambahan.
 - Validasi saat import: kolom wajib, format angka, duplikat; baris bermasalah ditampilkan di preview, tidak langsung merusak data
 - *Open: tab mana saja yang dapat tombol export; format xlsx saja atau plus CSV*
 
-## FASE 12 — Tab Project (ditambahkan 20 Jul 2026, diperkaya hasil meeting 20 Jul)
-Tab baru yang menggabungkan seluruh siklus project dalam satu tempat.
+## FASE 12 — Tab Project ✅ SELESAI (20 Jul 2026)
+Tab baru yang menggabungkan seluruh siklus project dalam satu tempat. Termasuk **dashboard khusus engineer** (login engineer → dashboard berisi task & progress project, tanpa nilai uang).
 
 - **Tracking project berjalan:** satu project meng-link quotation, PO, dan progress-nya; tahapan status: **Inquiry → Penawaran → PO → Pengadaan → Delivery → Instalasi/Commissioning → Selesai** (+ status Batal)
 - **Komponen per project** (hasil meeting 20 Jul):
