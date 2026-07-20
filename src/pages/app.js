@@ -1219,7 +1219,7 @@ export async function renderApp(container, user, logout) {
     addBomRow, updBomStatusBarang, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
     pickImportBom, confirmImportBom, cancelImportBom, bomImpToggle, exportBomXlsx,
     addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
-    genStandardTimeline, updMilestoneProgress, updMilestoneDate, updMilestoneDuration, autoScheduleTimeline,
+    genStandardTimeline, updMilestoneProgress, updMilestoneDate, updMilestoneDuration, autoScheduleTimeline, exportTimelineXlsx,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -2699,6 +2699,7 @@ function renderPrjDetail(p) {
         <b style="font-size:11px;color:${totProg >= 100 ? '#16a34a' : '#002060'};">${totProg}%</b>
       </div>` : ''}
       ${isAdmin() && !milestones.length ? `<button class="bxs" style="border-color:#002060;color:#002060;font-weight:600;" onclick="genStandardTimeline('${p.id}')">⚡ Buat Timeline Standar (12 tahap)</button>` : ''}
+      ${isAdmin() && milestones.length ? `<button class="bxs" onclick="exportTimelineXlsx('${p.id}')" title="Export timeline ke Excel untuk dikirim ke customer">⬇ Export Timeline</button>` : ''}
     </div>`
     })()}
     ${milestones.map(m => {
@@ -2881,6 +2882,39 @@ async function updMilestoneDuration(id, val) {
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
+// Export timeline ke Excel (rapi untuk dikirim ke customer — tanpa data harga)
+function exportTimelineXlsx(pid) {
+  if (!guardAdmin()) return
+  const p = projects.find(x => x.id === pid); if (!p) return
+  const ms = (prjChildren && expandedPrjId === pid ? prjChildren.milestones : []).slice().sort((a, b) => (a.sort || 99) - (b.sort || 99))
+  if (!ms.length) { toast('Timeline masih kosong', false); return }
+  const today = new Date().toISOString().slice(0, 10)
+  const statusOf = m => m.done ? ('SELESAI' + (m.done_date ? ' (' + m.done_date + ')' : ''))
+    : (m.target_date && m.target_date < today ? 'TELAT ' + Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000) + ' HARI'
+    : (+m.progress > 0 ? 'ON PROGRESS' : 'BELUM MULAI'))
+  const totProg = Math.round(ms.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / ms.length)
+  const aoa = [
+    ['TIMELINE PROJECT'],
+    ['PROJECT NAME', '', p.name],
+    ['CUSTOMER', '', p.customer_name || ''],
+    ['TANGGAL MULAI', '', p.start_date || ''],
+    ['TARGET SELESAI', '', p.due_date || ''],
+    ['PROGRESS KESELURUHAN', '', totProg + '%'],
+    [],
+    ['No', 'Tahapan', 'Durasi (hari)', 'Mulai', 'Target Selesai', 'Progress', 'Status'],
+    ...ms.map((m, i) => [
+      m.sort || i + 1, m.title, m.duration_days || '', m.start_date || '', m.target_date || '',
+      (m.done ? 100 : (+m.progress || 0)) + '%', statusOf(m)
+    ])
+  ]
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!cols'] = [{ wch: 4 }, { wch: 46 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 9 }, { wch: 22 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Timeline')
+  XLSX.writeFile(wb, `Timeline ${(p.customer_name || '').replace(/[^\w ]/g, '')} ${p.name.replace(/[^\w ]/g, '')}.xlsx`.replace(/\s+/g, ' '))
+  toast('Timeline ter-export ✓')
+}
+
 // Hitung deadline berantai: mulai dari start_date project (atau hari ini),
 // tiap tahap: start = selesai tahap sebelumnya, target = start + durasi - 1
 async function autoScheduleTimeline(pid) {
