@@ -125,3 +125,11 @@ Data hygiene: hapus duplikat + standar penamaan, supaya pipeline/dashboard/repor
 2. ✅ Admin gudang = role **admin** biasa
 3. ⏳ Alamat email perusahaan untuk reminder — menyusul
 4. ⏳ Daftar area final customer — menyusul (buat fleksibel, admin bisa tambah area)
+
+## Keputusan Tambahan (20 Jul 2026 — hasil diskusi Julius)
+1. ✅ **Sumber data = export Accurate.** Stock, customer, produk & harga, dan PO/faktur semuanya akan di-import dari file hasil export Accurate. Satu file per jenis data (file stock isinya stock saja, file PO isinya PO saja). Fitur import (Fase 11) harus baca format kolom export Accurate — contoh file menyusul dari Julius
+2. ✅ **Fase 9:** import stock harus bisa dilakukan admin dari **web maupun HP** → halaman upload dibuat responsive/mobile-friendly
+3. ✅ **Fase 11:** export dari webapp pakai format Excel (.xlsx); import menerima file export Accurate
+4. ✅ **Fase 12:** project hanya bisa dibuat **admin & super admin**; tahapan status project = **Inquiry → Penawaran → PO → Pengadaan → Delivery → Instalasi/Commissioning → Selesai** (+ status Batal)
+5. ✅ **Fase 13:** format baku **"PT" tanpa titik** (contoh: `PT Maju Jaya`); customer **perorangan/non-badan-usaha diperbolehkan** (tanpa prefix, tidak dianggap invalid saat audit)
+6. ✅ **Fase 5:** reminder dikirim via **email perusahaan** + integrasi **Google Calendar** (link akun Google sales); alamat email & kredensial menyusul
