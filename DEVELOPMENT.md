@@ -116,7 +116,7 @@ Tab baru yang menggabungkan seluruh siklus project dalam satu tempat. Termasuk *
   - **BOM list** — format mengikuti Excel Bomlist GSO (contoh: PT Yasulor AI Inspection): tabel bergrup (AREA SCAN CAMERA, LIGHTING, dst.), kolom STATUS BARANG (INDENT/READY/ON DELIVERY/TIBA), BRAND, CATEGORY, PART, PART NUMBER, PART NAME, QTY, HARGA, TOTAL, DETAIL; **import .xlsx dengan preview** (opsi ganti BOM lama) + **export .xlsx** layout sama; harga disembunyikan untuk engineer
   - **Design** — file drawing/desain (upload ke Supabase Storage)
   - **Report** — laporan progress/hasil pekerjaan
-  - **Timeline** — jadwal & milestone project (instalasi/commissioning termasuk di sini)
+  - **Timeline** — 12 tahapan standar GSO (keputusan 20 Jul 2026): 1. Survey → 2. Design → 3. BOM List → 4. Pembelian Barang → 5. Perakitan/Fabrikasi → 6. Programming → 7. FAT → 8. Delivery → 9. Instalasi → 10. Trial & Validasi → 11. BAP/Serah Terima → 12. Training. Tombol "⚡ Buat Timeline Standar" mengisi otomatis; tiap tahap punya progress % + target tanggal (telat disorot); progress keseluruhan project dihitung dari rata-rata
 - **Project engineering/instalasi:** status pengerjaan oleh engineer, dokumentasi foto (upload ke Supabase Storage)
 - **Manajemen tugas internal:** task per project — siapa mengerjakan apa, deadline, status (task board sederhana)
 - **Dokumen per project:** kumpulan file (quotation, PO, drawing, foto) dikelompokkan per project
