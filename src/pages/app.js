@@ -340,6 +340,41 @@ const AREA_SEED = {
 }
 let custAreas = null
 const getAreas = () => custAreas || AREA_SEED
+
+// ── Hari kerja & hari libur (untuk perhitungan deadline timeline) ──
+// Hari kerja GSO: Senin–Sabtu (hanya Minggu libur mingguan) + libur nasional/cuti bersama.
+// Libur nasional 2026 (SKB 3 Menteri) — bisa diedit/ditambah admin lewat setting 'holidays'.
+const HOLIDAYS_SEED_2026 = [
+  '2026-01-01', '2026-01-16', '2026-02-16', '2026-02-17', '2026-03-18', '2026-03-19', '2026-03-20',
+  '2026-03-21', '2026-03-22', '2026-03-23', '2026-03-24', '2026-04-03', '2026-04-05', '2026-05-01',
+  '2026-05-14', '2026-05-15', '2026-05-27', '2026-05-28', '2026-05-31', '2026-06-01', '2026-06-16',
+  '2026-08-17', '2026-08-25', '2026-12-25', '2026-12-26'
+]
+let holidaySet = null
+const getHolidays = () => holidaySet || new Set(HOLIDAYS_SEED_2026)
+const isoOf = d => d.toISOString().slice(0, 10)
+// Hari kerja = bukan Minggu (getDay 0) DAN bukan hari libur
+const isWorkday = d => d.getDay() !== 0 && !getHolidays().has(isoOf(d))
+// Tanggal kerja berikutnya (>= d)
+function nextWorkday(d) { const x = new Date(d); while (!isWorkday(x)) x.setDate(x.getDate() + 1); return x }
+// Dari `start`, ambil tanggal hari-kerja ke-`n` (inklusif). n=1 → start (kalau start hari kerja).
+function endAfterWorkdays(start, n) {
+  let x = nextWorkday(start), counted = 1
+  while (counted < n) { x.setDate(x.getDate() + 1); if (isWorkday(x)) counted++ }
+  return x
+}
+async function saveHolidaysSetting() { try { await setSetting('holidays', JSON.stringify([...getHolidays()])) } catch (e) { console.error(e) } }
+async function manageHolidays() {
+  if (!guardAdmin()) return
+  const cur = [...getHolidays()].sort().join('\n')
+  const input = prompt('Daftar hari libur nasional (satu tanggal per baris, format YYYY-MM-DD).\nHari kerja = Senin–Sabtu; Minggu otomatis libur.\nTambah/hapus tanggal lalu OK:', cur)
+  if (input === null) return
+  const list = input.split(/[\n,;\s]+/).map(s => s.trim()).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s))
+  holidaySet = new Set(list)
+  await saveHolidaysSetting()
+  renderPrjList()
+  toast(list.length + ' hari libur tersimpan')
+}
 async function saveAreasSetting() {
   try { await setSetting('customer_areas', JSON.stringify(getAreas())) } catch (e) { console.error(e) }
 }
@@ -1240,7 +1275,7 @@ export async function renderApp(container, user, logout) {
     addBomRow, updBomStatusBarang, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
     pickImportBom, confirmImportBom, cancelImportBom, bomImpToggle, exportBomXlsx,
     addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
-    genStandardTimeline, updMilestoneProgress, updMilestoneDate, updMilestoneDuration, autoScheduleTimeline, exportTimelineXlsx,
+    genStandardTimeline, updMilestoneProgress, updMilestoneDate, updMilestoneDuration, autoScheduleTimeline, exportTimelineXlsx, manageHolidays,
     dashSwitchPage, renderDashProjects,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
@@ -1723,6 +1758,10 @@ async function loadCustomers() {
     if (!custAreas) {
       try { const s = await getSetting('customer_areas'); custAreas = s ? JSON.parse(s) : JSON.parse(JSON.stringify(AREA_SEED)) }
       catch (e) { custAreas = JSON.parse(JSON.stringify(AREA_SEED)) }
+    }
+    if (!holidaySet) {
+      try { const h = await getSetting('holidays'); holidaySet = new Set(h ? JSON.parse(h) : HOLIDAYS_SEED_2026) }
+      catch (e) { holidaySet = new Set(HOLIDAYS_SEED_2026) }
     }
     refreshAreaFilter()
     renderCustList('')
@@ -2735,7 +2774,7 @@ function renderPrjDetail(p) {
           <div class="bar-track" style="width:70px;"><div style="position:absolute;left:0;top:0;bottom:0;width:${prog}%;background:${prog >= 100 ? '#16a34a' : late ? '#dc2626' : '#3b82f6'};border-radius:9px;"></div></div>
           <input type="number" value="${prog}" min="0" max="100" onchange="updMilestoneProgress('${m.id}',this.value)" style="width:46px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;"${m.done ? ' disabled' : ''}>%
         </div>
-        ${isAdmin() ? `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;color:#64748b;" title="Durasi pengerjaan (hari)">⏱<input type="number" value="${m.duration_days || ''}" min="1" placeholder="hr" onchange="updMilestoneDuration('${m.id}',this.value)" style="width:40px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;">hr</span>`
+        ${isAdmin() ? `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;color:#64748b;" title="Durasi dalam hari kerja (Senin–Sabtu, lewati Minggu & libur nasional)">⏱<input type="number" value="${m.duration_days || ''}" min="1" placeholder="hk" onchange="updMilestoneDuration('${m.id}',this.value)" style="width:40px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;">hk</span>`
         : (m.duration_days ? `<span style="font-size:10px;color:#64748b;">⏱ ${m.duration_days} hr</span>` : '')}
         ${isAdmin() ? `<input type="date" value="${m.target_date || ''}" onchange="updMilestoneDate('${m.id}',this.value)" title="Target/deadline tahap ini" style="padding:2px 5px;border:1px solid ${late ? '#fca5a5' : '#e2e8f0'};border-radius:5px;font-size:10px;background:${late ? '#fef2f2' : '#fff'};">`
         : (m.target_date ? `<span style="font-size:10px;font-weight:${late ? '700' : '500'};color:${m.done ? '#16a34a' : late ? '#dc2626' : '#64748b'};">${late ? '⚠ TELAT · ' : ''}${fmtD(m.target_date)}</span>` : '')}
@@ -2749,7 +2788,8 @@ function renderPrjDetail(p) {
       <input id="ms-date" type="date" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
       <button class="bxs" onclick="addMilestoneRow('${p.id}')">+ Milestone</button>
       ${milestones.length ? `<button class="bxs" onclick="genStandardTimeline('${p.id}')" title="Tambahkan tahapan standar yang belum ada">⚡ Lengkapi 12 Tahap Standar</button>
-      <button class="bxs" style="border-color:#0891b2;color:#0e7490;" onclick="autoScheduleTimeline('${p.id}')" title="Isi durasi (hari) tiap tahap dulu, lalu klik ini — target tanggal dihitung berantai dari tanggal mulai project">📆 Hitung Deadline Otomatis</button>` : ''}
+      <button class="bxs" style="border-color:#0891b2;color:#0e7490;" onclick="autoScheduleTimeline('${p.id}')" title="Isi durasi (hari kerja) tiap tahap dulu, lalu klik ini — target tanggal dihitung berantai, melewati Minggu & libur nasional">📆 Hitung Deadline (hari kerja)</button>
+      <button class="bxs" onclick="manageHolidays()" title="Kelola daftar hari libur nasional yang dipakai perhitungan">📅 Hari Libur</button>` : ''}
     </div>` : ''}
 
     <div style="display:flex;align-items:center;gap:7px;margin:12px 0 5px;flex-wrap:wrap;">
@@ -2918,13 +2958,13 @@ async function exportTimelineXlsx(pid) {
     const dayMs = 86400000
     const toDate = s => s ? new Date(s + 'T00:00:00') : null
     const fmtISO = d => d.toISOString().slice(0, 10)
-    // Pastikan tiap tahap punya start & target: hitung berantai dari start project bila belum diisi
+    // Pastikan tiap tahap punya start & target: hitung berantai (hari kerja) dari start project bila belum diisi
     let cursor = toDate(p.start_date) || toDate(ms.find(m => m.start_date)?.start_date) || new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')
     const bars = ms.map((m, i) => {
       let start = toDate(m.start_date), end = toDate(m.target_date)
       const dur = Math.max(1, +m.duration_days || (start && end ? Math.round((end - start) / dayMs) + 1 : 1))
-      if (!start) start = new Date(cursor)
-      if (!end) { end = new Date(start); end.setDate(end.getDate() + dur - 1) }
+      if (!start) start = nextWorkday(cursor)
+      if (!end) end = endAfterWorkdays(start, dur)
       cursor = new Date(end); cursor.setDate(cursor.getDate() + 1)
       return { m, no: m.sort || i + 1, start, end, dur }
     })
@@ -2960,10 +3000,10 @@ async function exportTimelineXlsx(pid) {
       // tampilkan bulan di tanggal 1 atau kolom pertama
       if (k === 0 || d.getDate() === 1) { mc.value = MON[d.getMonth()]; mc.font = { bold: true, size: 8, color: { argb: navy } } }
       const hc = headRow.getCell(col)
-      const weekend = d.getDay() === 0 || d.getDay() === 6
+      const off = !isWorkday(d) // Minggu atau libur nasional (Sabtu = hari kerja)
       hc.value = d.getDate() + '\n' + DOW[d.getDay()]
-      hc.font = { size: 7, color: { argb: weekend ? 'FFDC2626' : 'FFFFFFFF' } }
-      hc.fill = fill(weekend ? 'FF334155' : navy)
+      hc.font = { size: 7, color: { argb: off ? 'FFFECACA' : 'FFFFFFFF' } }
+      hc.fill = fill(off ? 'FF334155' : navy)
       hc.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
       hc.border = border
       ws.getColumn(col).width = 3.2
@@ -2982,19 +3022,16 @@ async function exportTimelineXlsx(pid) {
       row.getCell(6).value = (b.m.done ? 100 : (+b.m.progress || 0)) + '%'
       for (let c = 1; c <= FIXED; c++) { const cell = row.getCell(c); cell.font = { size: 9 }; cell.alignment = { vertical: 'middle', horizontal: c === 2 ? 'left' : 'center' }; cell.border = border }
       row.getCell(2).font = { size: 9, bold: true }
-      // Blok gantt
+      // Blok gantt (hari kerja diwarnai; hari libur di dalam rentang diarsir tipis merah = "jeda libur")
       days.forEach((d, k) => {
         const col = FIXED + 1 + k
         const cell = row.getCell(col)
         cell.border = border
         const inBar = d >= b.start && d <= b.end
-        const weekend = d.getDay() === 0 || d.getDay() === 6
-        if (inBar) {
-          // porsi progress: warnai penuh kalau selesai; sebagian sesuai progress
-          cell.fill = fill(barColor)
-        } else if (weekend) {
-          cell.fill = fill('FFF1F5F9')
-        }
+        const off = !isWorkday(d)
+        if (inBar && !off) cell.fill = fill(barColor)          // hari kerja dalam bar → warna status
+        else if (inBar && off) cell.fill = fill('FFFEE2E2')    // libur di dalam bar → arsir merah muda
+        else if (off) cell.fill = fill('FFF1F5F9')             // libur di luar bar → abu tipis
         // garis "hari ini"
         if (fmtISO(d) === fmtISO(today)) cell.border = { ...border, left: { style: 'medium', color: { argb: amber } }, right: { style: 'medium', color: { argb: amber } } }
       })
@@ -3006,6 +3043,8 @@ async function exportTimelineXlsx(pid) {
     const lr = 10 + bars.length
     const legend = [['■ Selesai', green], ['■ Berjalan', blue], ['■ Telat', red], ['■ Belum mulai', gray]]
     legend.forEach((l, i) => { const cell = ws.getCell(lr, 2 + i); cell.value = l[0]; cell.font = { size: 9, bold: true, color: { argb: l[1] } } })
+    ws.getCell(lr + 1, 2).value = 'Durasi dalam hari kerja (Senin–Sabtu). Kolom abu/merah muda = Minggu & libur nasional (tidak dihitung).'
+    ws.getCell(lr + 1, 2).font = { size: 8, italic: true, color: { argb: 'FF64748B' } }
 
     const buf = await wb.xlsx.writeBuffer()
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
@@ -3025,18 +3064,19 @@ async function autoScheduleTimeline(pid) {
   const ms = (prjChildren?.milestones || []).slice().sort((a, b) => (a.sort || 99) - (b.sort || 99))
   if (!ms.length) { toast('Belum ada milestone', false); return }
   if (ms.some(m => !m.duration_days && !m.done)) { toast('Isi dulu durasi (⏱ hari) untuk semua tahap yang belum selesai', false); return }
+  // Durasi = jumlah HARI KERJA (Senin–Sabtu, lewati Minggu & libur nasional)
   let cur = new Date((p.start_date || new Date().toISOString().slice(0, 10)) + 'T00:00:00')
   try {
     for (const m of ms) {
       const dur = Math.max(1, +m.duration_days || 1)
-      const start = new Date(cur)
-      const target = new Date(cur); target.setDate(target.getDate() + dur - 1)
+      const start = nextWorkday(cur)            // mulai di hari kerja
+      const target = endAfterWorkdays(start, dur) // hari-kerja ke-dur (inklusif)
       const u = await updateProjectMilestone(m.id, {
         start_date: start.toISOString().slice(0, 10),
         target_date: target.toISOString().slice(0, 10)
       })
       const i = prjChildren.milestones.findIndex(x => x.id === m.id); if (i >= 0) prjChildren.milestones[i] = u
-      cur = new Date(target); cur.setDate(cur.getDate() + 1)
+      cur = new Date(target); cur.setDate(cur.getDate() + 1) // tahap berikutnya mulai hari kerja setelahnya
     }
     // target selesai project = deadline tahap terakhir
     const lastTarget = prjChildren.milestones.slice().sort((a, b) => (a.sort || 99) - (b.sort || 99)).at(-1)?.target_date
