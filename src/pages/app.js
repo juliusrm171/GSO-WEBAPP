@@ -3851,17 +3851,28 @@ function renderAttention() {
   const mine = myRole === 'sales' // sales lihat miliknya; admin/super lihat semua
   const isMineDeal = h => !mine || h.created_by === currentUser?.id
 
-  // 1) Pipeline/shodan rotting (> 14 hari tanpa update)
+  // 1) Pipeline/shodan rotting — hanya rentang 14–90 hari (deal aktif yang layak dikejar).
+  // >90 hari = deal mati, harusnya di-Lost, bukan spam di panel harian.
+  const rot = []
   pipeline.filter(h => ['Open', 'Nego', 'On Hold'].includes(h.status) && isMineDeal(h)).forEach(h => {
     const age = fuAge(h.last_fu || h.date || h.created_at)
-    if (age > 14) items.push({ icon: '🕐', bg: '#fffbeb', pill: 'Follow-up', pc: '#b45309',
+    if (age > 14 && age <= 90) rot.push({ icon: '🕐', bg: '#fffbeb', pill: 'Follow-up', pc: '#b45309',
       text: `<b>${esc(h.customer_snapshot?.company || h.qo_number || '-')}</b> — pipeline tanpa update`, meta: `${age} hari · ${esc(h.profiles?.name || h.sales_name || '-')}`, sort: age })
   })
   shodans.filter(s => s.status === 'Open' && (!mine || s.created_by === currentUser?.id)).forEach(s => {
     const age = fuAge(s.last_fu || s.created_at)
-    if (age > 14) items.push({ icon: '🕐', bg: '#fffbeb', pill: 'Follow-up', pc: '#b45309',
+    if (age > 14 && age <= 90) rot.push({ icon: '🕐', bg: '#fffbeb', pill: 'Follow-up', pc: '#b45309',
       text: `<b>${esc(s.customer_name || s.title || '-')}</b> — shodan tanpa update`, meta: `${age} hari`, sort: age })
   })
+  // Ambil 6 terlama saja; sisanya diringkas jadi 1 baris
+  rot.sort((a, b) => b.sort - a.sort)
+  items.push(...rot.slice(0, 6))
+  if (rot.length > 6) items.push({ icon: '🕐', bg: '#fffbeb', pill: 'Follow-up', pc: '#b45309',
+    text: `<b>+${rot.length - 6} pipeline lain</b> perlu follow-up (14–90 hari)`, meta: 'buka tab Pipeline', sort: 50, onclick: `nav('pipeline')` })
+  // Pipeline sangat lama (>90 hari) — saran bersih-bersih, bukan follow-up
+  const dead = pipeline.filter(h => ['Open', 'Nego', 'On Hold'].includes(h.status) && isMineDeal(h) && fuAge(h.last_fu || h.date || h.created_at) > 90).length
+  if (dead) items.push({ icon: '🧹', bg: '#f1f5f9', pill: 'Bersihkan', pc: '#475569',
+    text: `<b>${dead} pipeline</b> mati (>90 hari tanpa update)`, meta: 'pertimbangkan tandai Lost agar data bersih', sort: 30, onclick: `nav('pipeline')` })
 
   // 2) Tahap project lewat deadline (admin/super saja — engineer punya dashboard sendiri)
   if (isAdmin()) overdueMs.forEach(m => {
