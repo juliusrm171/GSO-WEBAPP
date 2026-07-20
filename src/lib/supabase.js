@@ -66,20 +66,7 @@ export async function deleteStockItem(id) {
   const { error } = await supabase.from('stock_items').delete().eq('id', id)
   if (error) throw error
 }
-export async function getStockMoves(limit = 100) {
-  const { data, error } = await supabase.from('stock_moves')
-    .select('*, stock_items(part_number, name), profiles(name)')
-    .order('created_at', { ascending: false }).limit(limit)
-  if (error) throw error
-  return data
-}
-export async function addStockMove(m) {
-  const session = await getSession()
-  const { data, error } = await supabase.from('stock_moves').insert({ ...m, created_by: session.user.id })
-    .select('*, stock_items(part_number, name), profiles(name)').single()
-  if (error) throw error
-  return data
-}
+// (stock_moves dihapus — modul Stock kini murni daftar saldo, tanpa mutasi in/out)
 
 // ── FASE 12: PROJECT ──
 export async function getProjects() {

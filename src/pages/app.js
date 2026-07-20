@@ -396,6 +396,11 @@ const canSeeVal = () => myRole !== 'engineer'
 const canQuote = () => myRole !== 'engineer'
 function guardAdmin() { if (!isAdmin()) { toast('Hanya admin yang bisa melakukan ini', false); return false } return true }
 
+// Anti-XSS: escape teks user sebelum masuk innerHTML. `esc` untuk isi teks, `escA` untuk nilai di dalam atribut/onclick.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+const escA = s => String(s ?? '').replace(/[&<>"'\\`]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '\\': '&#92;', '`': '&#96;' }[c]))
+// Untuk argumen string di dalam onclick="fn('...')": escape konteks JS-string LALU atribut HTML
+const jsArg = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 function fmt(n) { if (!canSeeVal()) return 'Rp •••'; return 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') }
 function fmtPL(n) { return canSeeVal() ? 'Rp ' + Math.round(n || 0).toLocaleString('id-ID') : 'Rp •••' }
 // Gambar produk: file lokal (public/img/products) atau URL website Hikrobot
@@ -1211,7 +1216,7 @@ export async function renderApp(container, user, logout) {
 
   // Expose globals
   Object.assign(window, {
-    nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, delR, delS, uf, us,
+    nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, aSub, delR, delS, uf, us,
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
     renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
     renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
@@ -1399,7 +1404,7 @@ function renderCleanPanel() {
   const nonstd = customers.filter(c => (c.customer_type || 'PT') === 'PT' && c.company && normalizeCompanyName(c.company) !== c.company)
   ns.innerHTML = (nonstd.length ? `<div style="margin-bottom:8px;"><button class="bp" style="padding:6px 12px;font-size:11px;" onclick="fixAllNames()">✨ Rapikan Semua (${nonstd.length})</button></div>` : '') +
     (nonstd.map(c => `<div class="dbi">
-      <div style="flex:1;"><div class="dn">${c.company}</div><div class="dm" style="color:#16a34a;">→ ${normalizeCompanyName(c.company)}</div></div>
+      <div style="flex:1;"><div class="dn">${esc(c.company)}</div><div class="dm" style="color:#16a34a;">→ ${normalizeCompanyName(c.company)}</div></div>
       <button class="bxs" onclick="fixOneName('${c.id}')">Rapikan</button>
     </div>`).join('') || '<div class="empty">Semua nama sudah standar ✓</div>')
 
@@ -1410,7 +1415,7 @@ function renderCleanPanel() {
     <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:9px 11px;margin-bottom:8px;">
       ${g.map((c, ci) => `<label style="display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0;cursor:pointer;">
         <input type="radio" name="dupg-${gi}" value="${c.id}"${ci === 0 ? ' checked' : ''}>
-        <b>${c.company || '-'}</b><span style="color:#94a3b8;font-size:10px;">${[c.contact, c.tel, c.industry].filter(Boolean).join(' · ')}</span>
+        <b>${esc(c.company || '-')}</b><span style="color:#94a3b8;font-size:10px;">${[c.contact, c.tel, c.industry].filter(Boolean).join(' · ')}</span>
       </label>`).join('')}
       <div style="font-size:10px;color:#92400e;margin:4px 0 6px;">Kontak & visit ikut pindah ke yang dipertahankan; nama di shodan/PO/visit disamakan; duplikat dihapus.</div>
       <button class="bxs" style="border-color:#f59e0b;color:#92400e;" onclick="mergeDupGroup(${gi})">🔀 Gabungkan Grup Ini</button>
@@ -1455,7 +1460,7 @@ async function mergeDupGroup(gi) {
     }
     renderCleanPanel(); renderCustList('')
     document.getElementById('cc').textContent = customers.length
-    toast(`${drops.length} duplikat digabung ke "${keep.company}"`)
+    toast(`${drops.length} duplikat digabung ke "${esc(keep.company)}"`)
   } catch (e) { toast('Gagal merge: ' + e.message, false) }
 }
 
@@ -1468,9 +1473,9 @@ function acSrch(q) {
   drop.innerHTML = m.map(c => `<div class="acit" onclick="selC('${c.id}')">
     <div style="display:flex;align-items:center;gap:6px;">
       <span class="badge ${c.customer_type === 'End User' ? 'badge-eu' : 'badge-pt'}">${c.customer_type || 'PT'}</span>
-      <span>${c.company}</span>
+      <span>${esc(c.company)}</span>
     </div>
-    ${c.contact ? `<div class="acsub">${c.contact}</div>` : ''}
+    ${c.contact ? `<div class="acsub">${esc(c.contact)}</div>` : ''}
   </div>`).join('')
   drop.style.display = 'block'
 }
@@ -1495,7 +1500,7 @@ function showCtDrop() {
   const kList = contactsOf(qSelectedCustId)
   if (!kList.length) { drop.style.display = 'none'; return }
   drop.innerHTML = kList.map(k =>
-    `<div class="v-acitem" onmousedown="pickCt('${k.id}')"><b>${k.name}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}${k.tel ? '<div style="font-size:10px;color:#94a3b8;">' + k.tel + '</div>' : ''}</div>`
+    `<div class="v-acitem" onmousedown="pickCt('${k.id}')"><b>${esc(k.name)}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}${k.tel ? '<div style="font-size:10px;color:#94a3b8;">' + k.tel + '</div>' : ''}</div>`
   ).join('')
   drop.style.display = 'block'
 }
@@ -1516,6 +1521,7 @@ function pickCt(id) {
 function aGrp() { rows.push({ id: ++ctr, t: 'g', label: 'ENGINEERING SERVICE' }); renderRows() }
 function aItem(name = '', part = '', qty = 1, unit = 'unit', price = 0, disc = 0, img = '') { rows.push({ id: ++ctr, t: 'i', name, part, qty, unit, price, disc, img, subs: [] }); renderRows(); recalc() }
 function aNote() { rows.push({ id: ++ctr, t: 'n', text: '' }); renderRows() }
+function aSub(pid) { const p = rows.find(r => r.id === pid); if (p) { (p.subs = p.subs || []).push({ id: ++ctr, text: '' }); renderRows() } }
 function delR(id) { rows = rows.filter(r => r.id !== id); rows.forEach(r => { if (r.subs) r.subs = r.subs.filter(s => s.id !== id) }); renderRows(); recalc() }
 function delS(pid, sid) { const p = rows.find(r => r.id === pid); if (p) p.subs = p.subs.filter(s => s.id !== sid); renderRows() }
 function uf(id, f, v) { const r = rows.find(x => x.id === id); if (r) { r[f] = ['qty', 'price', 'disc'].includes(f) ? +v : v; recalc() } }
@@ -1542,7 +1548,7 @@ function partSearch(rowId, el) {
   const matches = PL_ITEMS.filter(p => p[1].toLowerCase().includes(q) || p[0].toLowerCase().includes(q)).slice(0, 10)
   if (!matches.length) { drop.style.display = 'none'; return }
   drop.innerHTML = matches.map(p =>
-    `<div class="part-item" onmousedown="pickPart(${rowId},'${p[1].replace(/'/g, "\\'")}')"><b>${p[1]}</b><span>${p[0].includes('—') ? p[0].split('—')[1].trim() : p[0]} · ${fmtPL(p[2])}</span></div>`
+    `<div class="part-item" onmousedown="pickPart(${rowId},'${jsArg(p[1])}')"><b>${p[1]}</b><span>${p[0].includes('—') ? p[0].split('—')[1].trim() : p[0]} · ${fmtPL(p[2])}</span></div>`
   ).join('')
   const rect = el.getBoundingClientRect()
   drop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 356)) + 'px'
@@ -1572,12 +1578,12 @@ function renderRows() {
     if (r.t === 'g') return `<tr style="background:#f1f5f9;"><td colspan="2"></td><td colspan="5"><input value="${r.label || ''}" oninput="uf(${r.id},'label',this.value)" placeholder="Nama grup / bundle..." style="width:100%;font-weight:600;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-size:12px;font-family:inherit;"></td><td style="text-align:right;font-weight:700;color:#002060;font-size:11px;padding-right:5px;" id="gt${r.id}">${fmt(gInfo.sums[r.id] || 0)}</td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
     if (r.t === 'n') return `<tr><td colspan="8"><textarea placeholder="Catatan..." oninput="uf(${r.id},'text',this.value)" style="width:100%;padding:3px 5px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:26px;">${r.text || ''}</textarea></td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
     nc++
-    const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#94a3b8;font-size:10px;">${nc}.${si + 1}</td><td></td><td colspan="6"><textarea oninput="us(${r.id},${s.id},this.value)" placeholder="Sub-item..." style="width:100%;padding:3px 4px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:24px;">${s.text || ''}</textarea></td><td><button class="bdel" onclick="delS(${r.id},${s.id})">✕</button></td></tr>`).join('')
+    const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#94a3b8;font-size:10px;">${nc}.${si + 1}</td><td></td><td colspan="6"><textarea oninput="us(${r.id},${s.id},this.value)" placeholder="Sub-item..." style="width:100%;padding:3px 4px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:24px;">${esc(s.text || '')}</textarea></td><td><button class="bdel" onclick="delS(${r.id},${s.id})">✕</button></td></tr>`).join('')
     return `<tr>
       <td style="text-align:center;color:#94a3b8;">${nc}</td>
       <td><input value="${r.part || ''}" placeholder="Part no. (ketik utk cari)" autocomplete="off" oninput="partSearch(${r.id},this)" onblur="hidePartDrop()"></td>
-      <td>${r.img ? `<img src="${imgSrc(r.img)}" onerror="this.style.display='none'" style="height:30px;float:left;margin:2px 6px 2px 0;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('${imgSrc(r.img)}','${(r.part || '').replace(/'/g, "\\'")}')">` : ''}<textarea oninput="uf(${r.id},'name',this.value)" style="width:${r.img ? 'calc(100% - 45px)' : '100%'};min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
-        <button onclick="rows.find(x=>x.id===${r.id}).subs.push({id:++ctr,text:''});renderRows();" style="font-size:10px;color:#94a3b8;background:none;border:none;cursor:pointer;">+ sub</button></td>
+      <td>${r.img ? `<img src="${imgSrc(r.img)}" onerror="this.style.display='none'" style="height:30px;float:left;margin:2px 6px 2px 0;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('${imgSrc(r.img)}','${jsArg((r.part || ''))}')">` : ''}<textarea oninput="uf(${r.id},'name',this.value)" style="width:${r.img ? 'calc(100% - 45px)' : '100%'};min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
+        <button onclick="aSub(${r.id})" style="font-size:10px;color:#94a3b8;background:none;border:none;cursor:pointer;">+ sub</button></td>
       <td><input type="number" value="${r.qty}" min="1" oninput="uf(${r.id},'qty',this.value)" style="text-align:right;"></td>
       <td><input value="${r.unit || ''}" oninput="uf(${r.id},'unit',this.value)"></td>
       <td><input type="number" value="${r.price || 0}" step="100000" oninput="uf(${r.id},'price',this.value)" style="text-align:right;"></td>
@@ -1629,7 +1635,7 @@ function renderPrev() {
     if (r.t === 'g') return `<tr class="grp"><td colspan="6">${r.label || ''}</td><td class="r" style="font-weight:700;">${fmt(gInfo.sums[r.id] || 0)}</td></tr>`
     if (r.t === 'n') return `<tr><td colspan="7" style="color:#888;font-size:9px;">${(r.text || '').replace(/\n/g, '<br>')}</td></tr>`
     nc++
-    const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#aaa;">${nc}.${si + 1}</td><td></td><td colspan="5">${s.text || ''}</td></tr>`).join('')
+    const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#aaa;">${nc}.${si + 1}</td><td></td><td colspan="5">${esc(s.text || '')}</td></tr>`).join('')
     const pvImg = r.img ? `<div><img src="${imgSrc(r.img)}" onerror="this.style.display='none'" style="height:38px;margin-top:3px;"></div>` : ''
     if (gInfo.inGroup.has(r.id)) return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}${pvImg}</td><td class="r">${r.qty}</td><td class="r"></td><td class="r"></td><td class="r"></td></tr>${subs}`
     return `<tr><td>${nc}</td><td style="font-size:9px;">${r.part || ''}</td><td style="font-weight:500;">${r.name || ''}${pvImg}</td><td class="r">${r.qty}</td><td class="r">${fmt(r.price || 0)}</td><td class="r">${r.disc ? r.disc + '%' : '-'}</td><td class="r">${fmt(calcR(r))}</td></tr>${subs}`
@@ -1765,7 +1771,7 @@ function renderContactPanel(c) {
   const list = contactsOf(c.id)
   return `
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.8rem .9rem;margin-bottom:5px;">
-      <div style="font-size:11.5px;font-weight:600;color:#002060;margin-bottom:.5rem;">👥 Kontak di ${c.company}</div>
+      <div style="font-size:11.5px;font-weight:600;color:#002060;margin-bottom:.5rem;">👥 Kontak di ${esc(c.company)}</div>
       ${list.length ? list.map(k => {
         if (editingContactId === k.id) return `
         <div style="background:#fff;border:1px solid #fbbf24;border-radius:8px;padding:.6rem;margin:5px 0;">
@@ -1783,7 +1789,7 @@ function renderContactPanel(c) {
         return `
         <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #eef2f7;">
           <div style="flex:1;">
-            <span style="font-size:12px;font-weight:600;">${k.name}</span>
+            <span style="font-size:12px;font-weight:600;">${esc(k.name)}</span>
             ${k.role ? `<span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 7px;border-radius:6px;margin-left:6px;">${k.role}</span>` : ''}
             <div style="font-size:10.5px;color:#94a3b8;">${[k.tel, k.email].filter(Boolean).join(' · ') || '—'}</div>
           </div>
@@ -1952,12 +1958,12 @@ function renderVisitList() {
     return `<div class="visit-row">
       <div class="visit-date">${fmtD(v.visit_date)}</div>
       <div class="visit-info">
-        <div class="visit-cust">${v.customer_name}${v.contact ? ' · ' + v.contact : ''}
+        <div class="visit-cust">${esc(v.customer_name)}${v.contact ? ' · ' + v.contact : ''}
           <span class="badge" style="font-size:9px;background:${v.visit_type === 'online' ? '#e0f2fe' : '#dcfce7'};color:${v.visit_type === 'online' ? '#0369a1' : '#166534'};">${v.visit_type === 'online' ? '💻 Online' : '🏢 Onsite'}</span>
           ${!inDb ? '<span class="badge" style="font-size:9px;background:#fef3c7;color:#92400e;">KANVASING — belum di database</span>' : ''}
         </div>
         <div class="visit-meta">${v.purpose || ''} · ${salesName}${relLabel ? ' · ' + relLabel : ''}</div>
-        ${v.notes ? `<div class="visit-notes">${v.notes}</div>` : ''}
+        ${v.notes ? `<div class="visit-notes">${esc(v.notes)}</div>` : ''}
       </div>
       ${!inDb && isAdmin() ? `<button class="bxs" style="flex-shrink:0;" onclick="custFromVisit('${v.id}')">➕ Jadikan Customer</button>` : ''}
       ${(mine || isAdmin()) ? `<button class="bdel" onclick="delVisit('${v.id}')">🗑</button>` : ''}
@@ -1974,7 +1980,7 @@ function vCustSearch(q) {
   const matches = customers.filter(c => (c.company || '').toLowerCase().includes(ql)).slice(0, 8)
   if (!matches.length) { drop.style.display = 'none'; return }
   drop.innerHTML = matches.map(c =>
-    `<div class="v-acitem" onclick="vCustPick('${c.id}')"><b>${c.company}</b>${c.contact ? ' · ' + c.contact : ''}</div>`
+    `<div class="v-acitem" onclick="vCustPick('${c.id}')"><b>${esc(c.company)}</b>${c.contact ? ' · ' + c.contact : ''}</div>`
   ).join('')
   drop.style.display = 'block'
 }
@@ -2011,7 +2017,7 @@ function showVCtDrop() {
   const kList = contactsOf(vSelectedCustId)
   if (!kList.length) { drop.style.display = 'none'; return }
   drop.innerHTML = kList.map(k =>
-    `<div class="v-acitem" onmousedown="pickVCt('${k.id}')"><b>${k.name}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}</div>`
+    `<div class="v-acitem" onmousedown="pickVCt('${k.id}')"><b>${esc(k.name)}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}</div>`
   ).join('')
   drop.style.display = 'block'
 }
@@ -2128,10 +2134,10 @@ function renderPO() {
     return `<tr>
       <td style="font-weight:600;white-space:nowrap;">${p.po_number || '-'}${p.so_number ? `<div style="font-size:9px;color:#94a3b8;font-weight:400;">${p.so_number}</div>` : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${fmtD(p.po_date)}</td>
-      <td>${p.customer_name || '-'}${p.notes ? `<div style="font-size:10px;color:#94a3b8;">${p.notes}</div>` : ''}</td>
+      <td>${esc(p.customer_name || '-')}${p.notes ? `<div style="font-size:10px;color:#94a3b8;">${esc(p.notes)}</div>` : ''}</td>
       <td style="font-size:11px;color:#64748b;">${isAdmin() ? `<select onchange="setPOSales('${p.id}',this.value)" style="padding:3px 6px;border:1px solid ${p.sales_id ? '#e2e8f0' : '#fca5a5'};border-radius:6px;font-size:11px;max-width:130px;background:${p.sales_id ? '#fff' : '#fef2f2'};">
         <option value="">—</option>
-        ${salesProfiles().map(s => `<option value="${s.id}"${s.id === p.sales_id ? ' selected' : ''}>${s.name}</option>`).join('')}
+        ${salesProfiles().map(s => `<option value="${s.id}"${s.id === p.sales_id ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}
       </select>` : poSalesName(p)}</td>
       <td style="text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmt(+p.amount || 0)}</td>
       <td style="font-size:10px;color:#64748b;">${quo ? quo.qo_number : '-'}</td>
@@ -2323,7 +2329,7 @@ function renderPOImportPreview() {
           <tbody>${poImportRows.map((r, i) => `<tr>
             <td><input type="checkbox"${r.include ? ' checked' : ''} onchange="poImpToggle(${i},this.checked)"></td>
             <td style="white-space:nowrap;">${r.so_number}</td><td>${r.po_number}</td>
-            <td style="white-space:nowrap;">${r.po_date}</td><td>${r.customer_name}</td>
+            <td style="white-space:nowrap;">${r.po_date}</td><td>${esc(r.customer_name)}</td>
             <td style="text-align:right;white-space:nowrap;">${fmt(r.amount)}</td>
           </tr>`).join('')}</tbody>
         </table>
@@ -2429,12 +2435,12 @@ function renderStock(q) {
     <div class="sc"><div class="sn">${stockItems.reduce((s, i) => s + (+i.qty || 0), 0)}</div><div class="sl">Total qty semua item</div></div>
     <div class="sc"><div class="sn" style="color:${stockItems.filter(i => +i.qty <= 0).length ? '#dc2626' : '#002060'};">${stockItems.filter(i => +i.qty <= 0).length}</div><div class="sl">Stock habis</div></div>`
   const dl = document.getElementById('stock-dl')
-  if (dl) dl.innerHTML = stockItems.map(i => `<option value="${i.part_number}">`).join('')
+  if (dl) dl.innerHTML = stockItems.map(i => `<option value="${esc(i.part_number)}">`).join('')
   el.innerHTML = f.length ? f.map(i => `
     <div class="dbi">
       <div style="flex:1;">
-        <div class="dn">${i.part_number}</div>
-        <div class="dm">${i.name || '—'}</div>
+        <div class="dn">${esc(i.part_number)}</div>
+        <div class="dm">${esc(i.name || '—')}</div>
       </div>
       <div style="text-align:right;margin-right:8px;">
         ${isAdmin()
@@ -2457,7 +2463,7 @@ async function updStockQty(id, val) {
 async function delStockItem(id) {
   if (!guardAdmin()) return
   const it = stockItems.find(x => x.id === id); if (!it) return
-  if (!confirm(`Hapus item ${it.part_number} dari daftar stock?`)) return
+  if (!confirm(`Hapus item ${esc(it.part_number)} dari daftar stock?`)) return
   try {
     await deleteStockItem(id)
     stockItems = stockItems.filter(x => x.id !== id)
@@ -2535,7 +2541,7 @@ function renderStockImportPreview() {
           <thead><tr><th style="width:26px;"></th><th>Part Number</th><th>Nama</th><th style="text-align:right;">Saldo Baru</th><th style="text-align:right;">Saldo Lama</th><th>Status</th></tr></thead>
           <tbody>${stockImportRows.map((r, i) => `<tr>
             <td><input type="checkbox"${r.include ? ' checked' : ''} onchange="stockImpToggle(${i},this.checked)"></td>
-            <td style="white-space:nowrap;">${r.part_number}</td><td>${r.name || '—'}</td>
+            <td style="white-space:nowrap;">${r.part_number}</td><td>${esc(r.name || '—')}</td>
             <td style="text-align:right;font-weight:600;">${r.qty}</td>
             <td style="text-align:right;color:#94a3b8;">${r.oldQty === null ? '—' : r.oldQty}</td>
             <td>${r.isNew ? '<span style="color:#16a34a;font-weight:600;">BARU</span>' : (r.oldQty === r.qty ? 'sama' : '<span style="color:#d97706;font-weight:600;">UPDATE</span>')}</td>
@@ -2591,9 +2597,9 @@ function togglePrjForm() {
   el.style.display = show ? 'block' : 'none'
   if (show) {
     const quoSel = document.getElementById('pj-quo')
-    quoSel.innerHTML = '<option value="">—</option>' + pipeline.slice(0, 100).map(h => `<option value="${h.id}">${h.qo_number || '-'} · ${h.customer_snapshot?.company || '-'}</option>`).join('')
+    quoSel.innerHTML = '<option value="">—</option>' + pipeline.slice(0, 100).map(h => `<option value="${h.id}">${h.qo_number || '-'} · ${esc(h.customer_snapshot?.company || '-')}</option>`).join('')
     const poSel = document.getElementById('pj-po')
-    poSel.innerHTML = '<option value="">—</option>' + pos.slice(0, 100).map(p => `<option value="${p.id}">${p.po_number} · ${p.customer_name || '-'}</option>`).join('')
+    poSel.innerHTML = '<option value="">—</option>' + pos.slice(0, 100).map(p => `<option value="${p.id}">${p.po_number} · ${esc(p.customer_name || '-')}</option>`).join('')
   }
 }
 async function savePrj() {
@@ -2651,7 +2657,7 @@ function renderPrjList() {
       ${overdueMs.slice(0, 8).map(m => {
         const days = Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000)
         return `<div style="font-size:11px;color:#7f1d1d;padding:2px 0;cursor:pointer;" onclick="togglePrjDetail('${m.projects.id}')">
-          • <b>${m.projects.name}</b> — ${m.title} (target ${fmtD(m.target_date)}, telat <b>${days} hari</b>)
+          • <b>${esc(m.projects.name)}</b> — ${esc(m.title)} (target ${fmtD(m.target_date)}, telat <b>${days} hari</b>)
         </div>`
       }).join('')}
       ${overdueMs.length > 8 ? `<div style="font-size:10px;color:#991b1b;">…dan ${overdueMs.length - 8} lainnya</div>` : ''}
@@ -2695,7 +2701,7 @@ function renderPrjDetail(p) {
   const fileChip = fl => `<a href="${fl.url}" target="_blank" style="font-size:10px;color:#1d4ed8;text-decoration:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:5px;padding:2px 7px;">${{ design: '📐', report: '📝', doc: '📄', foto: '📷' }[fl.kind] || '📄'} ${(fl.name || 'file').slice(0, 26)}</a>`
   return `
   <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin:4px 0 10px;background:#f8fafc;">
-    ${p.description ? `<div style="font-size:12px;color:#475569;margin-bottom:8px;">${p.description}</div>` : ''}
+    ${p.description ? `<div style="font-size:12px;color:#475569;margin-bottom:8px;">${esc(p.description)}</div>` : ''}
     <div style="font-size:11px;color:#64748b;margin-bottom:10px;">
       ${quo ? `📄 ${quo.qo_number}` : ''} ${po ? ` · 🧾 ${po.po_number}` : ''} ${p.start_date ? ` · mulai ${fmtD(p.start_date)}` : ''}${p.due_date ? ` · target selesai <b style="color:${p.due_date < today && p.stage !== 'Selesai' ? '#dc2626' : '#002060'};">${fmtD(p.due_date)}</b>` : ''}
     </div>
@@ -2717,7 +2723,7 @@ function renderPrjDetail(p) {
       const prog = m.done ? 100 : (+m.progress || 0)
       return `<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;flex-wrap:wrap;">
         <input type="checkbox"${m.done ? ' checked' : ''} onchange="toggleMilestone('${m.id}',this.checked)">
-        <div style="flex:1;min-width:130px;${m.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${m.sort ? m.sort + '. ' : ''}${m.title}</div>
+        <div style="flex:1;min-width:130px;${m.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${m.sort ? m.sort + '. ' : ''}${esc(m.title)}</div>
         <div style="display:flex;align-items:center;gap:4px;">
           <div class="bar-track" style="width:70px;"><div style="position:absolute;left:0;top:0;bottom:0;width:${prog}%;background:${prog >= 100 ? '#16a34a' : late ? '#dc2626' : '#3b82f6'};border-radius:9px;"></div></div>
           <input type="number" value="${prog}" min="0" max="100" onchange="updMilestoneProgress('${m.id}',this.value)" style="width:46px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;"${m.done ? ' disabled' : ''}>%
@@ -2765,7 +2771,7 @@ function renderPrjDetail(p) {
       return `
       <div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;">
         <input type="checkbox"${t.status === 'done' ? ' checked' : ''}${canToggle ? '' : ' disabled'} onchange="togglePrjTask('${t.id}',this.checked)">
-        <div style="flex:1;${t.status === 'done' ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${t.title}</div>
+        <div style="flex:1;${t.status === 'done' ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${esc(t.title)}</div>
         <span style="font-size:10px;color:#64748b;">${t.profiles?.name || 'belum ditugaskan'}</span>
         ${t.due_date ? `<span style="font-size:10px;color:${late ? '#dc2626' : '#94a3b8'};font-weight:${late ? '700' : '400'};">${fmtD(t.due_date)}</span>` : ''}
         ${isAdmin() ? `<button class="bdel" style="font-size:10px;" onclick="delPrjTask('${t.id}')">✕</button>` : ''}
@@ -2804,7 +2810,7 @@ function renderPrjDetail(p) {
       <div style="display:flex;gap:8px;padding:6px 8px;margin-bottom:4px;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;font-size:11.5px;">
         <div style="flex:1;">
           <b>👷 ${u.profiles?.name || '-'}</b> <span style="color:#94a3b8;font-size:10px;">${new Date(u.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-          <div style="white-space:pre-wrap;">${u.note || ''}</div>
+          <div style="white-space:pre-wrap;">${esc(u.note || '')}</div>
         </div>
         ${u.photo_url ? `<a href="${u.photo_url}" target="_blank"><img src="${u.photo_url}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;"></a>` : ''}
       </div>`).join('') || '<div style="font-size:11px;color:#94a3b8;">Belum ada report dari engineer.</div>'}
@@ -2826,7 +2832,7 @@ function renderPrjDetail(p) {
       <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px dashed #e2e8f0;font-size:11.5px;">
         <div style="flex:1;">
           <b>${u.profiles?.name || '-'}</b> <span style="color:#94a3b8;font-size:10px;">${new Date(u.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>${u.stage ? ' ' + prjStageBadge(u.stage) : ''}
-          <div>${u.note || ''}</div>
+          <div>${esc(u.note || '')}</div>
         </div>
         ${u.photo_url ? `<a href="${u.photo_url}" target="_blank"><img src="${u.photo_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;"></a>` : ''}
       </div>`).join('') || '<div style="font-size:11px;color:#94a3b8;">Belum ada update.</div>'}
@@ -3049,14 +3055,14 @@ function renderBomTable(boms) {
     <thead><tr><th>Status</th><th>Brand</th><th>Part Number</th><th>Part Name</th><th style="text-align:right;">Qty</th>${showMoney ? '<th style="text-align:right;">Harga</th><th style="text-align:right;">Total</th>' : ''}<th></th></tr></thead>
     <tbody>
     ${groups.map(g => `
-      <tr><td colspan="${showMoney ? 8 : 6}" style="background:#f1f5f9;font-weight:700;color:#002060;font-size:10.5px;">${g.name}${showMoney ? ` — ${fmt(g.items.reduce((s, b) => s + (+b.total || (+b.price || 0) * (+b.qty || 0)), 0))}` : ''}</td></tr>
+      <tr><td colspan="${showMoney ? 8 : 6}" style="background:#f1f5f9;font-weight:700;color:#002060;font-size:10.5px;">${esc(g.name)}${showMoney ? ` — ${fmt(g.items.reduce((s, b) => s + (+b.total || (+b.price || 0) * (+b.qty || 0)), 0))}` : ''}</td></tr>
       ${g.items.map(b => `<tr>
         <td>${isAdmin() ? `<select onchange="updBomStatusBarang('${b.id}',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;color:${stColor(b.status_barang)};font-weight:600;">
           ${BOM_STATUSES.map(s => `<option value="${s}"${(b.status_barang || '') === s ? ' selected' : ''}>${s || '—'}</option>`).join('')}
         </select>` : `<span style="color:${stColor(b.status_barang)};font-weight:600;font-size:10px;">${b.status_barang || '—'}</span>`}</td>
-        <td style="font-size:10px;color:#64748b;">${b.brand || ''}</td>
-        <td style="white-space:nowrap;font-weight:600;">${b.part_number || '-'}</td>
-        <td>${b.part_name || b.description || ''}${b.detail && /^https?:/.test(b.detail) ? ` <a href="${b.detail}" target="_blank" title="link detail">🔗</a>` : ''}</td>
+        <td style="font-size:10px;color:#64748b;">${esc(b.brand || '')}</td>
+        <td style="white-space:nowrap;font-weight:600;">${esc(b.part_number || '-')}</td>
+        <td>${esc(b.part_name || b.description || '')}${b.detail && /^https?:/.test(b.detail) ? ` <a href="${esc(b.detail)}" target="_blank" title="link detail">🔗</a>` : ''}</td>
         <td style="text-align:right;">${+b.qty}</td>
         ${showMoney ? `<td style="text-align:right;white-space:nowrap;">${b.price ? fmt(+b.price) : '-'}</td>
         <td style="text-align:right;white-space:nowrap;font-weight:600;">${fmt(+b.total || (+b.price || 0) * (+b.qty || 0))}</td>` : ''}
@@ -3164,10 +3170,10 @@ function renderBomImportPreview() {
           <thead><tr><th></th><th>Grup</th><th>Status</th><th>Brand</th><th>Part Number</th><th>Part Name</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Harga</th><th style="text-align:right;">Total</th></tr></thead>
           <tbody>${bomImportRows.map((r, i) => `<tr>
             <td><input type="checkbox"${r.include ? ' checked' : ''} onchange="bomImpToggle(${i},this.checked)"></td>
-            <td style="font-size:9.5px;color:#64748b;">${r.group_name || ''}</td>
+            <td style="font-size:9.5px;color:#64748b;">${esc(r.group_name || '')}</td>
             <td style="font-size:9.5px;">${r.status_barang || ''}</td>
-            <td style="font-size:9.5px;">${r.brand || ''}</td>
-            <td style="white-space:nowrap;">${r.part_number || '-'}</td><td>${r.part_name || ''}</td>
+            <td style="font-size:9.5px;">${esc(r.brand || '')}</td>
+            <td style="white-space:nowrap;">${esc(r.part_number || '-')}</td><td>${esc(r.part_name || '')}</td>
             <td style="text-align:right;">${r.qty}</td>
             <td style="text-align:right;white-space:nowrap;">${r.price ? fmt(r.price) : '-'}</td>
             <td style="text-align:right;white-space:nowrap;">${r.total ? fmt(r.total) : '-'}</td>
@@ -3350,7 +3356,7 @@ async function renderDashProjects() {
       ${overdueMs.slice(0, 8).map(m => {
         const days = Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000)
         return `<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f1f5f9;">
-          <b>${m.projects.name}</b> — ${m.title} <span style="color:#dc2626;font-weight:700;">telat ${days} hari</span>
+          <b>${esc(m.projects.name)}</b> — ${esc(m.title)} <span style="color:#dc2626;font-weight:700;">telat ${days} hari</span>
         </div>`
       }).join('')}
     </div>` : ''}
@@ -3364,7 +3370,7 @@ async function renderDashProjects() {
         return `<div style="padding:9px 0;border-bottom:1px solid #f1f5f9;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <b style="font-size:12.5px;">${p.name}</b> ${prjStageBadge(p.stage)}
-            <span style="font-size:11px;color:#64748b;">${p.customer_name || ''}</span>
+            <span style="font-size:11px;color:#64748b;">${esc(p.customer_name || '')}</span>
             <span style="flex:1;"></span>
             ${p.due_date ? `<span style="font-size:10px;color:${overdue ? '#dc2626' : '#94a3b8'};font-weight:${overdue ? '700' : '400'};">${overdue ? '⚠ ' : ''}target ${fmtD(p.due_date)}</span>` : ''}
             <button class="bxs" onclick="nav('project');setTimeout(()=>togglePrjDetail('${p.id}'),50)">Buka</button>
@@ -3372,7 +3378,7 @@ async function renderDashProjects() {
           ${prog !== null ? `<div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
             <div class="bar-track" style="flex:1;max-width:340px;"><div style="position:absolute;left:0;top:0;bottom:0;width:${prog}%;background:${prog >= 100 ? '#16a34a' : '#002060'};border-radius:9px;"></div></div>
             <b style="font-size:11px;color:#002060;">${prog}%</b>
-            ${next ? `<span style="font-size:10px;color:#64748b;">▸ ${next.sort ? next.sort + '. ' : ''}${next.title}${next.target_date ? ' (target ' + fmtD(next.target_date) + ')' : ''}</span>` : ''}
+            ${next ? `<span style="font-size:10px;color:#64748b;">▸ ${next.sort ? next.sort + '. ' : ''}${esc(next.title)}${next.target_date ? ' (target ' + fmtD(next.target_date) + ')' : ''}</span>` : ''}
           </div>` : '<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Belum ada timeline — buka project untuk membuat.</div>'}
           ${prjStepper(p)}
         </div>`
@@ -3401,7 +3407,7 @@ async function renderEngineerDash() {
         const late = t.due_date && t.due_date < today
         return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid #f1f5f9;">
           <input type="checkbox" onchange="togglePrjTask('${t.id}',this.checked)">
-          <div style="flex:1;"><b>${t.title}</b><div style="font-size:10px;color:#94a3b8;">${t.projects?.name || ''}</div></div>
+          <div style="flex:1;"><b>${esc(t.title)}</b><div style="font-size:10px;color:#94a3b8;">${esc(t.projects?.name || '')}</div></div>
           ${t.due_date ? `<span style="font-size:11px;font-weight:${late ? '700' : '400'};color:${late ? '#dc2626' : '#64748b'};">${late ? '⚠ ' : ''}${fmtD(t.due_date)}</span>` : ''}
         </div>`
       }).join('') : '<div class="empty">Tidak ada task terbuka untuk kamu. 🎉</div>'}
@@ -3411,7 +3417,7 @@ async function renderEngineerDash() {
       ${overdueMs.slice(0, 10).map(m => {
         const days = Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000)
         return `<div style="font-size:12px;padding:4px 0;border-bottom:1px solid #f1f5f9;">
-          <b>${m.projects.name}</b> — ${m.title} <span style="color:#dc2626;font-weight:700;">(telat ${days} hari)</span>
+          <b>${esc(m.projects.name)}</b> — ${esc(m.title)} <span style="color:#dc2626;font-weight:700;">(telat ${days} hari)</span>
           <button class="bxs" style="margin-left:6px;" onclick="nav('project');setTimeout(()=>togglePrjDetail('${m.projects.id}'),50)">Buka</button>
         </div>`
       }).join('')}
@@ -3525,10 +3531,10 @@ function renderKanvasList() {
   card.style.display = 'block'
   list.innerHTML = items.map(i => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #fef3c7;font-size:12px;">
-      <div style="flex:1;"><b>${i.name}</b>${i.contact ? ' · ' + i.contact : ''}
+      <div style="flex:1;"><b>${esc(i.name)}</b>${i.contact ? ' · ' + i.contact : ''}
         <div style="font-size:10px;color:#94a3b8;">${i.count} visit · terakhir ${fmtD(i.last)} · ${i.sales}</div>
       </div>
-      <button class="bxs" onclick="kanvasToForm('${i.name.replace(/'/g, "\\'")}')">➕ Lengkapi & Tambah</button>
+      <button class="bxs" onclick="kanvasToForm('${jsArg(i.name)}')">➕ Lengkapi & Tambah</button>
     </div>`).join('')
 }
 
@@ -3649,14 +3655,14 @@ function renderPL() {
   body.innerHTML = slice.length ? slice.map(([name, part, price, catI, img], i) => {
     return `<tr>
       <td style="color:#94a3b8;font-size:11px;">${start + i + 1}</td>
-      <td style="width:44px;">${img ? `<img src="${imgSrc(img)}" loading="lazy" onerror="this.style.display='none'" style="height:36px;max-width:44px;object-fit:contain;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('${imgSrc(img)}','${part.replace(/'/g, "\\'")}')">` : ''}</td>
+      <td style="width:44px;">${img ? `<img src="${imgSrc(img)}" loading="lazy" onerror="this.style.display='none'" style="height:36px;max-width:44px;object-fit:contain;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('${imgSrc(img)}','${jsArg(part)}')">` : ''}</td>
       <td style="font-weight:600;font-size:12px;white-space:nowrap;">${part}</td>
       <td style="font-size:11px;color:#64748b;">${name && name !== part ? name : '—'}</td>
       <td><span class="badge">${PL_CATS[catI]}</span></td>
       <td class="pc">${fmtPL(price)}</td>
       <td style="display:flex;gap:4px;">
-        ${canQuote() ? `<button class="bxs" onclick="addFromPL('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price},'${img || ''}')">+ Quote</button>` : ''}
-        ${isAdmin() ? `<button class="bxs" style="border-color:#e2e8f0;color:#64748b;" onclick="saveStarPL('${part.replace(/'/g, "\\'")}',${price},'${PL_CATS[catI]}')">★</button>` : ''}
+        ${canQuote() ? `<button class="bxs" onclick="addFromPL('${jsArg(part)}','${jsArg(name)}',${price},'${img || ''}')">+ Quote</button>` : ''}
+        ${isAdmin() ? `<button class="bxs" style="border-color:#e2e8f0;color:#64748b;" onclick="saveStarPL('${jsArg(part)}',${price},'${PL_CATS[catI]}')">★</button>` : ''}
       </td></tr>`
   }).join('') : `<tr><td colspan="7" class="empty">Tidak ada produk cocok.</td></tr>`
   const total = Math.ceil(plF.length / PER)
@@ -3701,7 +3707,7 @@ function renderM() {
       <td style="padding:5px 7px;"><div style="font-weight:500;font-size:11px;">${part}</div>${spec ? `<div style="font-size:10px;color:#94a3b8;">${spec}</div>` : ''}</td>
       <td style="padding:5px 7px;"><span class="badge" style="font-size:9px;">${PL_CATS[catI]}</span></td>
       <td style="padding:5px 7px;text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmtPL(price)}</td>
-      <td style="padding:5px 7px;"><button class="bxs" onclick="mAdd('${part.replace(/'/g, "\\'")}','${name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}',${price},'${img || ''}')">+ Tambah</button></td>
+      <td style="padding:5px 7px;"><button class="bxs" onclick="mAdd('${jsArg(part)}','${jsArg(name)}',${price},'${img || ''}')">+ Tambah</button></td>
     </tr>`
   }).join('') : `<tr><td colspan="4" class="empty">Tidak ada produk.</td></tr>`
   const total = Math.ceil(mF.length / PER)
@@ -3765,7 +3771,7 @@ function renderPip() {
       <b>${fmtD(v.visit_date)}</b>
       <span class="badge" style="font-size:9px;background:${v.visit_type === 'online' ? '#e0f2fe' : '#dcfce7'};color:${v.visit_type === 'online' ? '#0369a1' : '#166534'};">${v.visit_type === 'online' ? '💻 Online' : '🏢 Onsite'}</span>
       ${v.purpose || ''} · ${v.profiles?.name || v.sales_name || '-'}${v.contact ? ' · ketemu ' + v.contact : ''}
-      ${v.notes ? `<div style="color:#64748b;margin-top:2px;">${v.notes}</div>` : ''}
+      ${v.notes ? `<div style="color:#64748b;margin-top:2px;">${esc(v.notes)}</div>` : ''}
     </div>`).join('')}
   </td></tr>`
 
@@ -3786,8 +3792,8 @@ function renderPip() {
         <td style="white-space:nowrap;"><span class="badge" style="background:#fef3c7;color:#92400e;">SHODAN</span>${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
         <td style="white-space:nowrap;font-size:10px;">${s.created_at ? new Date(s.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
         <td style="font-size:11px;color:#64748b;">${s.profiles?.name || '-'}</td>
-        <td>${s.customer_name || '-'}${s.contact ? `<div style="font-size:10px;color:#94a3b8;">${s.contact}</div>` : ''}</td>
-        <td style="color:#64748b;font-size:11px;">${s.title || '-'}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${s.notes}</div>` : ''}${canQuote() && s.status === 'Open' ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="shodanToQuo('${s.id}')">→ Quotation</button>` : ''}${vBtn}</td>
+        <td>${esc(s.customer_name || '-')}${s.contact ? `<div style="font-size:10px;color:#94a3b8;">${esc(s.contact)}</div>` : ''}</td>
+        <td style="color:#64748b;font-size:11px;">${esc(s.title || '-')}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${esc(s.notes)}</div>` : ''}${canQuote() && s.status === 'Open' ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="shodanToQuo('${s.id}')">→ Quotation</button>` : ''}${vBtn}</td>
         <td style="text-align:right;font-weight:600;white-space:nowrap;color:#92400e;">${fmt(+s.est_value || 0)}</td>
         <td><input type="date" value="${s.last_fu || ''}" onchange="updShFU('${s.id}',this.value)" ${editable ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
         <td>${editable ? `<select onchange="updShStatus('${s.id}',this.value)">${['Open', 'Won', 'Lost'].map(x => `<option${s.status === x ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${s.status}</span>`}${s.status === 'Lost' && s.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${s.lost_reason}</div>` : ''}${editable ? ` <button class="bdel" style="font-size:10px;" onclick="delShodan('${s.id}')">🗑</button>` : ''}</td>
@@ -3805,7 +3811,7 @@ function renderPip() {
       <td style="font-weight:600;white-space:nowrap;">${h.qo_number || '-'}${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${h.date ? new Date(h.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
       <td style="font-size:11px;color:#64748b;">${salesName}</td>
-      <td>${cust.company || '-'}</td>
+      <td>${esc(cust.company || '-')}</td>
       <td style="color:#64748b;font-size:11px;">${desc || '-'}${vBtn}</td>
       <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? fmt(h.grand_total) : '-'}</td>
       <td><input type="date" value="${h.last_fu || ''}" onchange="updFU('${h.id}',this.value)" ${(isAdmin() || (myRole === 'sales' && isMe)) ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
@@ -3971,7 +3977,7 @@ function renderDashboard() {
     return `<div class="recent-row">
       <div class="recent-info">
         <div class="recent-no">${h.qo_number || '-'} <span class="${statusBadgeClass[h.status] || 'bopen'}">${h.status || 'Open'}</span></div>
-        <div class="recent-meta">${h.customer_snapshot?.company || '-'} · ${salesName} · ${fmtD(h.date)}</div>
+        <div class="recent-meta">${esc(h.customer_snapshot?.company || '-')} · ${salesName} · ${fmtD(h.date)}</div>
       </div>
       <div class="recent-val">${h.grand_total ? fmt(h.grand_total) : '-'}</div>
     </div>`
@@ -4083,8 +4089,11 @@ function renderLeaderboard() {
   const lbl = document.getElementById('lb-month-lbl'); if (lbl) lbl.textContent = MONTH_ID[+m - 1] + ' ' + y
   const map = {}
   const salesIds = new Set(salesProfiles().map(p => p.id))
-  pos.filter(p => (p.po_date || '').startsWith(lbMonth) && (!p.sales_id || salesIds.has(p.sales_id))).forEach(p => {
-    const id = p.sales_id || 'x', name = poSalesName(p)
+  // Hanya PO yang sudah di-assign ke sales (is_sales) yang masuk leaderboard — PO import tanpa sales dikecualikan
+  let unassigned = 0
+  pos.filter(p => (p.po_date || '').startsWith(lbMonth)).forEach(p => {
+    if (!p.sales_id || !salesIds.has(p.sales_id)) { unassigned++; return }
+    const id = p.sales_id, name = poSalesName(p)
     if (!map[id]) map[id] = { name, count: 0, value: 0 }
     map[id].count++
     map[id].value += (+p.amount || 0)
@@ -4096,10 +4105,11 @@ function renderLeaderboard() {
     const pct = tgt > 0 ? Math.round(d.value / tgt * 100) : null
     return `<div class="lb-row">
       <div class="lb-rank ${rankClass}">${i + 1}</div>
-      <div class="lb-info"><div class="lb-name">${d.name}</div><div class="lb-sub">${d.count} PO${pct !== null ? ' · ' + pct + '% dari target' : ''}</div></div>
+      <div class="lb-info"><div class="lb-name">${esc(d.name)}</div><div class="lb-sub">${d.count} PO${pct !== null ? ' · ' + pct + '% dari target' : ''}</div></div>
       <div class="lb-val">${fmt(d.value)}</div>
     </div>`
-  }).join('') : `<div class="empty">Belum ada PO di bulan ini.</div>`
+  }).join('') : `<div class="empty">Belum ada PO ber-sales di bulan ini.</div>`
+  if (unassigned && lbEl) lbEl.innerHTML += `<div style="font-size:10px;color:#94a3b8;padding:6px 0 0;border-top:1px dashed #f1f5f9;margin-top:4px;">${unassigned} PO belum di-assign sales (tidak dihitung) — set di tab PO.</div>`
 }
 
 async function updS(id, val) {
@@ -4166,7 +4176,7 @@ function showShCtDrop() {
   const kList = contactsOf(shSelectedCustId)
   if (!kList.length) { drop.style.display = 'none'; return }
   drop.innerHTML = kList.map(k =>
-    `<div class="v-acitem" onmousedown="pickShCt('${k.id}')"><b>${k.name}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}${k.tel ? '<div style="font-size:10px;color:#94a3b8;">' + k.tel + '</div>' : ''}</div>`
+    `<div class="v-acitem" onmousedown="pickShCt('${k.id}')"><b>${esc(k.name)}</b>${k.role ? ' <span style="font-size:10px;background:#e0e7ff;color:#3730a3;padding:1px 6px;border-radius:5px;">' + k.role + '</span>' : ''}${k.tel ? '<div style="font-size:10px;color:#94a3b8;">' + k.tel + '</div>' : ''}</div>`
   ).join('')
   drop.style.display = 'block'
 }
@@ -4194,8 +4204,8 @@ function renderShodan() {
     const warn = s.status === 'Open' && age > 14
     return `<tr>
       <td style="white-space:nowrap;font-size:10px;">${fmtD(s.created_at)}</td>
-      <td style="font-weight:500;">${s.title || '-'}${warn ? ' <span style="color:#b45309;font-size:9px;">⚠ ' + age + ' hari</span>' : ''}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${s.notes}</div>` : ''}</td>
-      <td>${s.customer_name || '-'}${s.contact ? `<div style="font-size:10px;color:#94a3b8;">${s.contact}</div>` : ''}</td>
+      <td style="font-weight:500;">${esc(s.title || '-')}${warn ? ' <span style="color:#b45309;font-size:9px;">⚠ ' + age + ' hari</span>' : ''}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${esc(s.notes)}</div>` : ''}</td>
+      <td>${esc(s.customer_name || '-')}${s.contact ? `<div style="font-size:10px;color:#94a3b8;">${esc(s.contact)}</div>` : ''}</td>
       <td style="font-size:11px;color:#64748b;">${s.profiles?.name || '-'}</td>
       <td style="text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmt(s.est_value || 0)}</td>
       <td><input type="date" value="${s.last_fu || ''}" onchange="updShFU('${s.id}',this.value)" ${editable ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
@@ -4300,7 +4310,7 @@ async function saveNewCust() {
     custDupConfirmed = true
     if (warnEl) {
       warnEl.style.display = ''
-      warnEl.innerHTML = `⚠️ Mirip dengan customer yang sudah ada: <b>${sim.company}</b>. Kalau memang beda perusahaan, klik <b>Simpan</b> sekali lagi.`
+      warnEl.innerHTML = `⚠️ Mirip dengan customer yang sudah ada: <b>${esc(sim.company)}</b>. Kalau memang beda perusahaan, klik <b>Simpan</b> sekali lagi.`
     }
     return
   }
@@ -4364,7 +4374,7 @@ function renderCustList(q) {
       <div style="flex:1;">
         <div style="display:flex;align-items:center;gap:6px;">
           <span class="badge ${c.customer_type === 'End User' ? 'badge-eu' : 'badge-pt'}">${c.customer_type || 'PT'}</span>
-          <div class="dn">${c.company || '-'}</div>
+          <div class="dn">${esc(c.company || '-')}</div>
         </div>
         <div class="dm">${[c.contact, c.tel, c.industry].filter(Boolean).join(' · ') || '—'}</div>
         ${c.area_big ? `<div class="dm" style="color:#0369a1;">📍 ${c.area_big}${c.area_small ? ' · ' + c.area_small : ''}</div>` : ''}
@@ -4409,7 +4419,7 @@ function renderCustEditRow(c) {
       </div>
       <div class="fld" style="margin-bottom:8px;">
         <label>Alamat</label>
-        <textarea id="ec-addr" style="min-height:44px;">${c.address || ''}</textarea>
+        <textarea id="ec-addr" style="min-height:44px;">${esc(c.address || '')}</textarea>
       </div>
       <div style="display:flex;gap:6px;">
         <button class="bp" style="padding:6px 12px;font-size:11px;" id="btn-save-edit-cust" onclick="saveEditCust('${c.id}')">Simpan Perubahan</button>
@@ -4490,9 +4500,9 @@ function renderProdList(q) {
     if (editingProdId === p.id) return renderProdEditRow(p)
     return `
     <div class="dbi">
-      <div><div class="dn">${p.name}</div><div class="dm">${fmtPL(p.price || 0)} / ${p.unit || 'unit'} · ${p.category || ''}</div>${attLinks(p.attachments, true)}</div>
+      <div><div class="dn">${p.name}</div><div class="dm">${fmtPL(p.price || 0)} / ${p.unit || 'unit'} · ${esc(p.category || '')}</div>${attLinks(p.attachments, true)}</div>
       <div style="display:flex;gap:4px;">
-        ${canQuote() ? `<button class="bxs" onclick="aItem('${p.name.replace(/'/g, "\\'")}','${(p.part || '').replace(/'/g, "\\'")}',1,'${p.unit || 'unit'}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button>` : ''}
+        ${canQuote() ? `<button class="bxs" onclick="aItem('${jsArg(p.name)}','${jsArg((p.part || ''))}',1,'${p.unit || 'unit'}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button>` : ''}
         ${isAdmin() ? `<button class="bxs" title="Attach dokumen (datasheet, sertifikat)" onclick="pickAttach('prod','${p.id}')">📎</button>
         <button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditProd('${p.id}')">✏️ Edit</button>
         <button class="bdel" onclick="delProd('${p.id}')">🗑</button>` : ''}
