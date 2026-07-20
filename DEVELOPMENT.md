@@ -81,8 +81,8 @@ Independen — modul baru.
 - **Barang masuk & keluar** dengan **foto** (upload ke Supabase Storage) untuk pendataan
 - *Open: role admin gudang (lihat Fase 1)*
 
-## FASE 10 — Customer per Area
-Struktur **2 tingkat** (keputusan 20 Jul 2026): **Area Besar** (kota/wilayah) → **Area Kecil** (kawasan industri). Satu customer = satu area. Admin bisa tambah area besar/kecil sendiri kapan saja.
+## FASE 10 — Customer per Area ✅ SELESAI (20 Jul 2026)
+Struktur **2 tingkat** (keputusan 20 Jul 2026): **Area Besar** (kota/wilayah) → **Area Kecil** (kawasan industri). Satu customer = satu area. Admin bisa tambah area besar/kecil sendiri kapan saja (lewat dropdown ➕ di form customer).
 
 - Form customer: pilih Area Besar dulu → muncul dropdown Area Kecil milik area itu
 - Filter database customer per area besar ATAU langsung per area kecil
@@ -126,8 +126,8 @@ Tab baru yang menggabungkan seluruh siklus project dalam satu tempat.
 - **Permission:** dibuat hanya oleh **admin & super admin**; engineer lihat project & task tanpa nilai harga; sales lihat project miliknya
 - Saran urutan pengerjaan: setelah Fase 9 (biar bisa link ke stock/delivery), atau paralel karena strukturnya modul baru
 
-## FASE 13 — Pembersihan & Standarisasi Database Customer (ditambahkan 20 Jul 2026)
-Data hygiene: hapus duplikat + standar penamaan, supaya pipeline/dashboard/report akurat.
+## FASE 13 — Pembersihan & Standarisasi Database Customer ✅ SELESAI (20 Jul 2026)
+Data hygiene: hapus duplikat + standar penamaan, supaya pipeline/dashboard/report akurat. Tool di **Database → 🧹 Rapikan Data** (khusus admin). Keputusan: format **"PT" tanpa titik**; customer perorangan diperbolehkan.
 
 - **Deduplikasi customer:** deteksi entri double (nama mirip: beda kapitalisasi, spasi, dengan/tanpa "PT", typo) → tampilkan kandidat duplikat → admin pilih merge; semua relasi (quotation, shodan, pipeline, PO, visit) dipindah ke satu customer utama sebelum duplikat dihapus
 - **Standarisasi penamaan customer:** perusahaan wajib berformat baku dengan **"PT"** di depan (mis. `PT Maju Jaya`, bukan `Maju jaya` / `pt. maju jaya`); dukung juga badan usaha lain (CV, UD, Tbk) dengan aturan sama
@@ -138,8 +138,8 @@ Data hygiene: hapus duplikat + standar penamaan, supaya pipeline/dashboard/repor
 
 ---
 
-## FASE 14 — Permission & Attachment Upgrade (hasil meeting 20 Jul 2026)
-Penyesuaian pada fitur yang sudah jadi (quotation Fase 2, PO Fase 6) — bisa dikerjakan cepat, tidak tergantung fase lain.
+## FASE 14 — Permission & Attachment Upgrade ✅ SELESAI (20 Jul 2026)
+Penyesuaian pada fitur yang sudah jadi (quotation Fase 2, PO Fase 6). Termasuk kolom **No. SO Accurate** di PO + tombol 📎 attach dokumen di daftar PO & Produk Tersimpan (bucket Storage `attachments`).
 
 - **Quotation — created by mengikuti akun:** pembuat quotation otomatis tercatat dari akun yang login (bukan dipilih manual); inisial di nomor quotation ikut akun pembuat
 - **Visibility PO:** admin & super admin lihat **semua** PO; **sales hanya lihat PO miliknya sendiri**
