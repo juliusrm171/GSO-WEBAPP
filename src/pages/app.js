@@ -314,6 +314,61 @@ function titleWordCo(w) {
   if (w.length <= 4 && !/[AIUEO]/i.test(w)) return w.toUpperCase() // akronim tanpa vokal: CBP, GSO, MMC
   return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
 }
+// ── FASE 10: Customer per Area (2 tingkat: Area Besar → Area Kecil) ──
+const AREA_SEED = {
+  'Jakarta': ['JIEP Pulogadung', 'KBN Cakung', 'KBN Marunda', 'Sunter', 'Cilincing', 'Lainnya'],
+  'Cikarang/Bekasi': ['Jababeka', 'MM2100', 'EJIP', 'Delta Silicon (Lippo)', 'Hyundai (BIIE)', 'GIIC Deltamas', 'Tambun/Cibitung', 'Lainnya'],
+  'Karawang': ['KIIC', 'Suryacipta', 'Indotaisei', 'KNIC', 'Mitra Karawang (KIM)', 'Podomoro Industrial Park', 'Lainnya'],
+  'Bogor': ['Sentul', 'Cibinong (CCIE)', 'Gunung Putri', 'Cileungsi', 'Lainnya'],
+  'Bandung': ['Rancaekek', 'Batujajar', 'Cimahi/Leuwigajah', 'Majalaya', 'Padalarang', 'Lainnya'],
+}
+let custAreas = null
+const getAreas = () => custAreas || AREA_SEED
+async function saveAreasSetting() {
+  try { await setSetting('customer_areas', JSON.stringify(getAreas())) } catch (e) { console.error(e) }
+}
+// Isi pasangan dropdown Area Besar + Area Kecil (px = prefix id: 'nc' / 'ec')
+function fillAreaSelectors(px, big, small) {
+  const bigSel = document.getElementById(px + '-area-big'), smallSel = document.getElementById(px + '-area-small')
+  if (!bigSel || !smallSel) return
+  const areas = getAreas()
+  const fillSmall = (selSmall) => {
+    const b = bigSel.value
+    smallSel.innerHTML = '<option value="">— Area Kecil —</option>' +
+      (areas[b] || []).map(s => `<option${s === selSmall ? ' selected' : ''}>${s}</option>`).join('') +
+      (b && isAdmin() ? '<option value="__add__">➕ Tambah area kecil…</option>' : '')
+  }
+  bigSel.innerHTML = '<option value="">— Area Besar —</option>' +
+    Object.keys(areas).map(a => `<option${a === big ? ' selected' : ''}>${a}</option>`).join('') +
+    (isAdmin() ? '<option value="__add__">➕ Tambah area besar…</option>' : '')
+  bigSel.onchange = () => {
+    if (bigSel.value === '__add__') {
+      const n = prompt('Nama area besar baru (kota/wilayah):')
+      if (n && n.trim()) {
+        custAreas = getAreas(); custAreas[n.trim()] = custAreas[n.trim()] || ['Lainnya']
+        saveAreasSetting(); fillAreaSelectors(px, n.trim())
+      } else fillAreaSelectors(px)
+      return
+    }
+    fillSmall()
+  }
+  smallSel.onchange = () => {
+    if (smallSel.value === '__add__') {
+      const n = prompt('Nama area kecil baru (kawasan industri) untuk ' + bigSel.value + ':')
+      if (n && n.trim()) {
+        custAreas = getAreas(); custAreas[bigSel.value] = custAreas[bigSel.value] || []
+        custAreas[bigSel.value].splice(Math.max(custAreas[bigSel.value].length - 1, 0), 0, n.trim())
+        saveAreasSetting(); fillAreaSelectors(px, bigSel.value, n.trim())
+      } else smallSel.value = small || ''
+    }
+  }
+  fillSmall(small)
+}
+const areaVal = (px, which) => {
+  const v = document.getElementById(px + '-area-' + which)?.value || ''
+  return v === '__add__' ? '' : (v || null)
+}
+
 function normalizeCompanyName(raw) {
   let s = (raw || '').trim().replace(/\s+/g, ' ')
   if (!s) return s
@@ -897,6 +952,10 @@ export async function renderApp(container, user, logout) {
             <div class="fld"><label>Email</label><input id="nc-email" placeholder="email@perusahaan.com"></div>
             <div class="fld"><label>Industri / Keterangan</label><input id="nc-industry" placeholder="Farmasi, Food & Bev, dll"></div>
           </div>
+          <div class="g2" style="margin-bottom:8px;">
+            <div class="fld"><label>📍 Area Besar (kota/wilayah)</label><select id="nc-area-big"></select></div>
+            <div class="fld"><label>📍 Area Kecil (kawasan industri)</label><select id="nc-area-small"></select></div>
+          </div>
           <div class="fld" style="margin-bottom:8px;">
             <label>Alamat</label>
             <textarea id="nc-addr" placeholder="Jl. alamat lengkap..." style="min-height:44px;"></textarea>
@@ -915,6 +974,7 @@ export async function renderApp(container, user, logout) {
             <option value="PT">PT / Perusahaan</option>
             <option value="End User">End User</option>
           </select>
+          <select id="cust-area-f" onchange="setCustAreaFilter(this.value)"><option value="all">Semua Area</option></select>
           <button class="bs" style="padding:6px 10px;font-size:11px;" onclick="loadCustomers()">↻ Refresh</button>
         </div>
         <div id="db-cust-list"></div>
@@ -1059,7 +1119,7 @@ export async function renderApp(container, user, logout) {
     showCtDrop, hideCtDrop, pickCt, showVCtDrop, hideVCtDrop, pickVCt,
     partSearch, hidePartDrop, pickPart,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
-    renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup,
+    renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup, setCustAreaFilter,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -1518,6 +1578,12 @@ async function doSaveCust() {
 async function loadCustomers() {
   try {
     customers = await getCustomers()
+    // FASE 10: muat konfigurasi area (fallback ke seed kalau belum pernah disimpan)
+    if (!custAreas) {
+      try { const s = await getSetting('customer_areas'); custAreas = s ? JSON.parse(s) : JSON.parse(JSON.stringify(AREA_SEED)) }
+      catch (e) { custAreas = JSON.parse(JSON.stringify(AREA_SEED)) }
+    }
+    refreshAreaFilter()
     renderCustList('')
     document.getElementById('cc').textContent = customers.length
   } catch (e) { console.error(e) }
@@ -2822,6 +2888,7 @@ function toggleAddCust() {
   el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none'
   custDupConfirmed = false
   const w = document.getElementById('nc-dup-warn'); if (w) w.style.display = 'none'
+  if (el.style.display === 'block') fillAreaSelectors('nc')
 }
 
 function setNewCustType(type) {
@@ -2865,7 +2932,9 @@ async function saveNewCust() {
       email: document.getElementById('nc-email').value,
       address: document.getElementById('nc-addr').value,
       customer_type: newCustType,
-      industry: document.getElementById('nc-industry').value
+      industry: document.getElementById('nc-industry').value,
+      area_big: areaVal('nc', 'big'),
+      area_small: areaVal('nc', 'small')
     })
     customers.unshift(c)
     toast('Customer tersimpan!')
@@ -2879,10 +2948,27 @@ async function saveNewCust() {
   btn.disabled = false; btn.textContent = 'Simpan'
 }
 
+// FASE 10: filter area (format nilai: "big" atau "big|small")
+let custAreaFilter = 'all'
+function setCustAreaFilter(val) { custAreaFilter = val; renderCustList(document.querySelector('.filter-bar input')?.value || '') }
+function refreshAreaFilter() {
+  const sel = document.getElementById('cust-area-f'); if (!sel) return
+  const areas = getAreas(); const cur = sel.value || 'all'
+  sel.innerHTML = '<option value="all">Semua Area</option>' + Object.keys(areas).map(b =>
+    `<optgroup label="${b}"><option value="${b}">${b} (semua)</option>` +
+    areas[b].map(s => `<option value="${b}|${s}">&nbsp;&nbsp;${s}</option>`).join('') + '</optgroup>'
+  ).join('')
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'all'
+}
+
 function renderCustList(q) {
   let f = customers
   if (q) f = f.filter(c => (c.company || '').toLowerCase().includes(q.toLowerCase()) || (c.contact || '').toLowerCase().includes(q.toLowerCase()) || contactsOf(c.id).some(k => k.name.toLowerCase().includes(q.toLowerCase())))
   if (custTypeFilter !== 'all') f = f.filter(c => c.customer_type === custTypeFilter)
+  if (custAreaFilter !== 'all') {
+    const [fb, fs] = custAreaFilter.split('|')
+    f = f.filter(c => c.area_big === fb && (!fs || c.area_small === fs))
+  }
 
   const list = document.getElementById('db-cust-list'); if (!list) return
   list.innerHTML = f.length ? f.map(c => {
@@ -2896,6 +2982,7 @@ function renderCustList(q) {
           <div class="dn">${c.company || '-'}</div>
         </div>
         <div class="dm">${[c.contact, c.tel, c.industry].filter(Boolean).join(' · ') || '—'}</div>
+        ${c.area_big ? `<div class="dm" style="color:#0369a1;">📍 ${c.area_big}${c.area_small ? ' · ' + c.area_small : ''}</div>` : ''}
         ${c.email ? `<div class="dm">${c.email}</div>` : ''}
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0;">
@@ -2931,6 +3018,10 @@ function renderCustEditRow(c) {
         <div class="fld"><label>Email</label><input id="ec-email" value="${(c.email || '').replace(/"/g, '&quot;')}"></div>
         <div class="fld"><label>Industri / Keterangan</label><input id="ec-industry" value="${(c.industry || '').replace(/"/g, '&quot;')}"></div>
       </div>
+      <div class="g2" style="margin-bottom:8px;">
+        <div class="fld"><label>📍 Area Besar</label><select id="ec-area-big"></select></div>
+        <div class="fld"><label>📍 Area Kecil</label><select id="ec-area-small"></select></div>
+      </div>
       <div class="fld" style="margin-bottom:8px;">
         <label>Alamat</label>
         <textarea id="ec-addr" style="min-height:44px;">${c.address || ''}</textarea>
@@ -2949,6 +3040,7 @@ function startEditCust(id) {
   editingCustId = id
   editCustType = c.customer_type === 'End User' ? 'End User' : 'PT'
   renderCustList(document.querySelector('.filter-bar input')?.value || '')
+  fillAreaSelectors('ec', c.area_big || '', c.area_small || '')
 }
 
 function setEditCustType(type) {
@@ -2981,7 +3073,9 @@ async function saveEditCust(id) {
       email: document.getElementById('ec-email').value,
       address: document.getElementById('ec-addr').value,
       customer_type: editCustType,
-      industry: document.getElementById('ec-industry').value
+      industry: document.getElementById('ec-industry').value,
+      area_big: areaVal('ec', 'big'),
+      area_small: areaVal('ec', 'small')
     })
     const idx = customers.findIndex(x => x.id === id)
     if (idx >= 0) customers[idx] = c
