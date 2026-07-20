@@ -835,6 +835,14 @@ export async function renderApp(container, user, logout) {
       </table></div>
       <div style="font-size:11px;color:#94a3b8;margin-top:5px;" id="po-ct"></div>
     </div>
+    <div class="card" id="company-target-card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div class="chd" style="margin:0;">🏢 Target Omset Perusahaan / Bulan</div>
+        <input type="number" id="company-target" placeholder="2000000000" onchange="saveCompanyTarget(this.value)" style="width:170px;padding:6px 10px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;text-align:right;">
+        <span id="company-target-lbl" style="font-size:12px;font-weight:700;color:#002060;"></span>
+        <span style="font-size:10px;color:#94a3b8;">Berlaku untuk SEMUA bulan (termasuk tahun-tahun sebelumnya) — dipakai di popup grafik dashboard. Ubah kapan saja.</span>
+      </div>
+    </div>
     <div class="card">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:.7rem;">
         <div class="chd" style="margin:0;">🎯 Target Sales Bulanan</div>
@@ -1100,7 +1108,7 @@ export async function renderApp(container, user, logout) {
   plSearch()
   renderRows()
 
-  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts(), loadShodans(), loadPOs(), loadTargets()])
+  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts(), loadShodans(), loadPOs(), loadTargets(), loadCompanyTarget()])
   applyRoleUI()
   renderDashboard()
   if (!gv('f-no')) document.getElementById('f-no').value = genQuoNo()
@@ -1126,6 +1134,7 @@ export async function renderApp(container, user, logout) {
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
     renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup, setCustAreaFilter, pickAttach,
     pickImportPO, confirmImportPO, cancelImportPO, poImpToggle, exportPOXlsx, exportCustXlsx,
+    saveCompanyTarget, setPOSales,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -1173,6 +1182,8 @@ function applyRoleUI() {
   }
   // FASE 13: tab Rapikan Data khusus admin
   const dtClean = document.getElementById('dt-clean'); if (dtClean) dtClean.style.display = isAdmin() ? '' : 'none'
+  // Target perusahaan: hanya admin yang bisa ubah
+  const ctInp = document.getElementById('company-target'); if (ctInp) ctInp.disabled = !isAdmin()
 
   // FASE 14: created-by quotation ikut akun login — nama sales terisi dari profil dan dikunci untuk role sales
   const fs = document.getElementById('f-sales')
@@ -2017,7 +2028,10 @@ function renderPO() {
       <td style="font-weight:600;white-space:nowrap;">${p.po_number || '-'}${p.so_number ? `<div style="font-size:9px;color:#94a3b8;font-weight:400;">${p.so_number}</div>` : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${fmtD(p.po_date)}</td>
       <td>${p.customer_name || '-'}${p.notes ? `<div style="font-size:10px;color:#94a3b8;">${p.notes}</div>` : ''}</td>
-      <td style="font-size:11px;color:#64748b;">${poSalesName(p)}</td>
+      <td style="font-size:11px;color:#64748b;">${isAdmin() ? `<select onchange="setPOSales('${p.id}',this.value)" style="padding:3px 6px;border:1px solid ${p.sales_id ? '#e2e8f0' : '#fca5a5'};border-radius:6px;font-size:11px;max-width:130px;background:${p.sales_id ? '#fff' : '#fef2f2'};">
+        <option value="">—</option>
+        ${salesProfiles().map(s => `<option value="${s.id}"${s.id === p.sales_id ? ' selected' : ''}>${s.name}</option>`).join('')}
+      </select>` : poSalesName(p)}</td>
       <td style="text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmt(+p.amount || 0)}</td>
       <td style="font-size:10px;color:#64748b;">${quo ? quo.qo_number : '-'}</td>
       <td style="white-space:nowrap;">
@@ -2109,6 +2123,36 @@ function renderTargets() {
       </div>
     </div>`
   }).join('') || '<div class="empty">Belum ada data sales.</div>'
+}
+
+// ── Target omset perusahaan per bulan (berlaku semua bulan, disimpan di app_settings) ──
+let companyTarget = 0
+async function loadCompanyTarget() {
+  try {
+    const v = await getSetting('company_target_monthly')
+    companyTarget = +(v || 0)
+  } catch (e) { console.error(e) }
+  const inp = document.getElementById('company-target'); if (inp && companyTarget) inp.value = companyTarget
+  const lbl = document.getElementById('company-target-lbl'); if (lbl) lbl.textContent = companyTarget ? '= ' + fmt(companyTarget) : ''
+}
+async function saveCompanyTarget(val) {
+  if (!guardAdmin()) return
+  try {
+    companyTarget = +(val || 0)
+    await setSetting('company_target_monthly', String(companyTarget))
+    const lbl = document.getElementById('company-target-lbl'); if (lbl) lbl.textContent = companyTarget ? '= ' + fmt(companyTarget) : ''
+    toast('Target perusahaan: ' + fmt(companyTarget) + ' / bulan')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+// Set sales pemilik PO langsung dari daftar (untuk PO hasil import)
+async function setPOSales(id, salesId) {
+  if (!guardAdmin()) return
+  try {
+    const u = await updatePOFields(id, { sales_id: salesId || null })
+    const i = pos.findIndex(x => x.id === id); if (i >= 0) pos[i] = u
+    renderPO(); toast('Sales PO di-update: ' + (poSalesName(u)))
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
 // ── FASE 11: Import PO dari file Accurate + Export Excel ──
@@ -2842,15 +2886,18 @@ function openMpop(ym) {
   const [y, m] = ym.split('-')
   const list = pos.filter(p => (p.po_date || '').startsWith(ym))
   const tot = list.reduce((s, p) => s + (+p.amount || 0), 0)
-  const tgt = targets.filter(t => t.period === ym).reduce((s, t) => s + (+t.target || 0), 0)
+  const tgtSales = targets.filter(t => t.period === ym).reduce((s, t) => s + (+t.target || 0), 0)
+  // Target utama = target omset perusahaan (berlaku semua bulan); fallback ke jumlah target sales
+  const tgt = companyTarget > 0 ? companyTarget : tgtSales
   const pct = tgt > 0 ? Math.round(tot / tgt * 100) : null
   const achieved = tgt > 0 && tot >= tgt
   document.getElementById('mpop-title').textContent = '📅 ' + MONTH_ID[+m - 1] + ' ' + y
   document.getElementById('mpop-body').innerHTML = `
     <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total PO</span><span style="font-weight:600;">${list.length}</span></div>
     <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total Revenue</span><span style="font-weight:700;color:#002060;">${fmt(tot)}</span></div>
-    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Target (semua sales)</span><span style="font-weight:600;">${tgt > 0 ? fmt(tgt) : 'Belum di-set'}</span></div>
-    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Persentase</span><span style="font-weight:700;color:${achieved ? '#16a34a' : '#002060'};">${pct !== null ? pct + '%' : '—'}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Target Perusahaan</span><span style="font-weight:600;">${companyTarget > 0 ? fmt(companyTarget) : 'Belum di-set'}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Target (jumlah per sales)</span><span style="font-weight:600;">${tgtSales > 0 ? fmt(tgtSales) : 'Belum di-set'}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Persentase (vs ${companyTarget > 0 ? 'target perusahaan' : 'target sales'})</span><span style="font-weight:700;color:${achieved ? '#16a34a' : '#002060'};">${pct !== null ? pct + '%' : '—'}</span></div>
     <div style="margin-top:10px;text-align:center;padding:8px;border-radius:8px;font-weight:700;font-size:13px;background:${tgt === 0 ? '#f1f5f9' : achieved ? '#dcfce7' : '#fef2f2'};color:${tgt === 0 ? '#64748b' : achieved ? '#16a34a' : '#dc2626'};">
       ${tgt === 0 ? 'Target belum di-set' : achieved ? '✅ ACHIEVE' : '❌ Belum Achieve'}
     </div>`
