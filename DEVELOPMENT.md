@@ -97,6 +97,17 @@ Semua jalan di sisi browser (SheetJS), tanpa server tambahan.
 - Validasi saat import: kolom wajib, format angka, duplikat; baris bermasalah ditampilkan di preview, tidak langsung merusak data
 - *Open: tab mana saja yang dapat tombol export; format xlsx saja atau plus CSV*
 
+## FASE 12 — Tab Project (ditambahkan 20 Jul 2026)
+Tab baru yang menggabungkan seluruh siklus project dalam satu tempat. Cakupan (hasil klarifikasi Julius, 20 Jul 2026) — keempatnya masuk:
+
+- **Tracking project berjalan:** satu project meng-link quotation, PO, dan progress-nya (inquiry → penawaran → PO → delivery → selesai); status per tahap terlihat jelas
+- **Project engineering/instalasi:** timeline instalasi/commissioning di customer, status pengerjaan oleh engineer, dokumentasi foto (upload ke Supabase Storage)
+- **Manajemen tugas internal:** task per project — siapa mengerjakan apa, deadline, status (semacam task board sederhana)
+- **Dokumen per project:** kumpulan file (quotation, PO, drawing, foto) dikelompokkan per project, tersimpan di Supabase Storage
+- **Permission:** mengikuti aturan Fase 1 — engineer bisa lihat project & task tapi nilai harga disembunyikan; sales lihat project miliknya
+- Saran urutan pengerjaan: setelah Fase 9 (biar bisa link ke stock/delivery), atau paralel karena strukturnya modul baru
+- *Open: tahapan status project final (nama & urutannya); siapa boleh buat project (admin saja atau sales juga)*
+
 ---
 
 ## Keputusan Tambahan (17 Jul 2026)
