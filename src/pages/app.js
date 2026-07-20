@@ -1,4 +1,5 @@
 import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields } from '../lib/supabase.js'
+import * as XLSX from 'xlsx'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -819,8 +820,11 @@ export async function renderApp(container, user, logout) {
         <select id="po-f-sales" onchange="renderPO()" style="padding:6px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;">
           <option value="all">Semua Sales</option>
         </select>
+        <button class="bxs" id="btn-po-import" onclick="pickImportPO()" title="Upload file export Accurate (Daftar Pesanan Penjualan .xlsx)">📥 Import Accurate</button>
+        <button class="bxs" id="btn-po-export" onclick="exportPOXlsx()">⬇ Excel</button>
         <button class="bs" style="padding:6px 11px;font-size:11px;" onclick="loadPOs().then(renderPO)">↻ Refresh</button>
       </div>
+      <div id="po-import-preview" style="display:none;"></div>
       <div class="tblwrap"><table class="piptbl">
         <thead><tr>
           <th style="width:110px;">PO No.</th><th style="width:85px;">Tanggal</th>
@@ -975,6 +979,7 @@ export async function renderApp(container, user, logout) {
             <option value="End User">End User</option>
           </select>
           <select id="cust-area-f" onchange="setCustAreaFilter(this.value)"><option value="all">Semua Area</option></select>
+          <button class="bs" style="padding:6px 10px;font-size:11px;" id="btn-exp-cust-xlsx" onclick="exportCustXlsx()">⬇ Excel</button>
           <button class="bs" style="padding:6px 10px;font-size:11px;" onclick="loadCustomers()">↻ Refresh</button>
         </div>
         <div id="db-cust-list"></div>
@@ -1120,6 +1125,7 @@ export async function renderApp(container, user, logout) {
     partSearch, hidePartDrop, pickPart,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
     renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup, setCustAreaFilter, pickAttach,
+    pickImportPO, confirmImportPO, cancelImportPO, poImpToggle, exportPOXlsx, exportCustXlsx,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -1160,7 +1166,7 @@ function applyRoleUI() {
 
   // Non-admin: sembunyikan tombol tulis database, export, dan kunci target visit
   if (!isAdmin()) {
-    ;['btn-add-cust', 'btn-add-prod', 'btn-exp-csv'].forEach(id => {
+    ;['btn-add-cust', 'btn-add-prod', 'btn-exp-csv', 'btn-exp-cust-xlsx', 'btn-po-import', 'btn-po-export'].forEach(id => {
       const el = document.getElementById(id); if (el) el.style.display = 'none'
     })
     const vt = document.getElementById('visit-target'); if (vt) vt.disabled = true
@@ -2103,6 +2109,131 @@ function renderTargets() {
       </div>
     </div>`
   }).join('') || '<div class="empty">Belum ada data sales.</div>'
+}
+
+// ── FASE 11: Import PO dari file Accurate + Export Excel ──
+let poImportRows = [], poImportSkipped = 0
+function pickImportPO() {
+  if (!guardAdmin()) return
+  let inp = document.getElementById('po-import-input')
+  if (!inp) {
+    inp = document.createElement('input')
+    inp.type = 'file'; inp.id = 'po-import-input'; inp.accept = '.xlsx,.xls'; inp.style.display = 'none'
+    document.body.appendChild(inp)
+  }
+  inp.onchange = async () => { const f = inp.files[0]; inp.value = ''; if (f) await parseAccuratePO(f) }
+  inp.click()
+}
+async function parseAccuratePO(file) {
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
+    const hi = raw.findIndex(r => (r || []).some(c => String(c || '').trim() === 'Nomor #'))
+    if (hi < 0) { toast('Format tidak dikenali — kolom "Nomor #" (export Accurate) tidak ditemukan', false); return }
+    const head = raw[hi].map(c => String(c || '').trim())
+    const iSO = head.indexOf('Nomor #'), iPO = head.indexOf('No. PO'), iDate = head.indexOf('Tanggal'), iCust = head.indexOf('Pelanggan'), iTot = head.indexOf('Total')
+    const existSO = new Set(pos.map(p => p.so_number).filter(Boolean))
+    const existPO = new Set(pos.map(p => p.po_number).filter(Boolean))
+    poImportRows = []; poImportSkipped = 0
+    for (const r of raw.slice(hi + 1)) {
+      const so = String(r?.[iSO] || '').trim()
+      if (!so || !/^SO/i.test(so)) continue // baris kosong / footer " dari N"
+      const po = String(r?.[iPO] || '').trim()
+      let d = r?.[iDate]
+      d = d instanceof Date ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : String(d || '').slice(0, 10)
+      const cust = normalizeCompanyName(String(r?.[iCust] || '').trim())
+      const amt = Math.round((+r?.[iTot] || 0) * 100) / 100
+      if (existSO.has(so) || (po && existPO.has(po))) { poImportSkipped++; continue }
+      poImportRows.push({ so_number: so, po_number: po || so, po_date: d, customer_name: cust, amount: amt, include: true })
+    }
+    renderPOImportPreview()
+  } catch (e) { toast('Gagal baca file: ' + e.message, false) }
+}
+function poImpToggle(i, on) { if (poImportRows[i]) poImportRows[i].include = on }
+function cancelImportPO() { poImportRows = []; const el = document.getElementById('po-import-preview'); if (el) { el.style.display = 'none'; el.innerHTML = '' } }
+function renderPOImportPreview() {
+  const el = document.getElementById('po-import-preview'); if (!el) return
+  el.style.display = ''
+  if (!poImportRows.length) {
+    el.innerHTML = `<div class="empty" style="border:1px solid #fde68a;background:#fffbeb;border-radius:9px;margin-bottom:10px;">Tidak ada PO baru di file ini${poImportSkipped ? ` — ${poImportSkipped} baris dilewati karena No. SO/PO-nya sudah ada di sistem` : ''}.</div>`
+    return
+  }
+  const tot = poImportRows.reduce((s, r) => s + r.amount, 0)
+  el.innerHTML = `
+    <div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:9px;padding:10px 12px;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:600;color:#1e40af;margin-bottom:6px;">📥 Preview Import Accurate — ${poImportRows.length} PO baru · total ${fmt(tot)}${poImportSkipped ? ` · ${poImportSkipped} dilewati (sudah ada)` : ''}</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:11px;flex-wrap:wrap;">
+        Sales default:
+        <select id="po-imp-sales" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+          <option value="">— belum ditentukan (isi nanti) —</option>
+          ${salesProfiles().map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+        </select>
+        <button class="bp" style="padding:5px 12px;font-size:11px;" id="btn-confirm-imp" onclick="confirmImportPO()">✅ Import yang Dicentang</button>
+        <button class="bs" style="padding:5px 10px;font-size:11px;" onclick="cancelImportPO()">Batal</button>
+      </div>
+      <div style="max-height:230px;overflow:auto;border:1px solid #dbeafe;border-radius:7px;background:#fff;">
+        <table class="piptbl" style="font-size:11px;">
+          <thead><tr><th style="width:26px;"></th><th>No. SO</th><th>No. PO</th><th style="width:80px;">Tanggal</th><th>Customer</th><th style="text-align:right;">Total (Rp)</th></tr></thead>
+          <tbody>${poImportRows.map((r, i) => `<tr>
+            <td><input type="checkbox"${r.include ? ' checked' : ''} onchange="poImpToggle(${i},this.checked)"></td>
+            <td style="white-space:nowrap;">${r.so_number}</td><td>${r.po_number}</td>
+            <td style="white-space:nowrap;">${r.po_date}</td><td>${r.customer_name}</td>
+            <td style="text-align:right;white-space:nowrap;">${fmt(r.amount)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+}
+async function confirmImportPO() {
+  if (!guardAdmin()) return
+  const chosen = poImportRows.filter(r => r.include)
+  if (!chosen.length) { toast('Tidak ada baris dicentang', false); return }
+  const salesId = document.getElementById('po-imp-sales')?.value || null
+  const btn = document.getElementById('btn-confirm-imp')
+  if (btn) { btn.disabled = true; btn.textContent = 'Mengimport…' }
+  let ok = 0, fail = 0
+  for (const r of chosen) {
+    try {
+      const p = await addPO({ po_number: r.po_number, so_number: r.so_number, po_date: r.po_date, customer_name: r.customer_name, sales_id: salesId, quotation_id: null, amount: r.amount, notes: 'Import Accurate' })
+      pos.unshift(p); ok++
+      if (btn && ok % 20 === 0) btn.textContent = `Mengimport… ${ok}/${chosen.length}`
+    } catch (e) { fail++; console.error(r.so_number, e) }
+  }
+  cancelImportPO()
+  renderPO()
+  toast(`Import selesai: ${ok} PO masuk${fail ? `, ${fail} gagal (lihat console)` : ''}`)
+}
+function exportPOXlsx() {
+  if (!guardAdmin()) return
+  const month = document.getElementById('po-month')?.value || curMonth()
+  const data = pos.filter(p => (p.po_date || '').startsWith(month)).map(p => ({
+    'No. PO': p.po_number, 'No. SO': p.so_number || '', 'Tanggal': p.po_date, 'Customer': p.customer_name || '',
+    'Sales': poSalesName(p), 'Nilai (Rp)': +p.amount || 0,
+    'Quotation': p.quotation_id ? (pipeline.find(h => h.id === p.quotation_id)?.qo_number || '') : '', 'Catatan': p.notes || ''
+  }))
+  if (!data.length) { toast('Tidak ada PO di bulan ' + month, false); return }
+  const ws = XLSX.utils.json_to_sheet(data)
+  ws['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 11 }, { wch: 34 }, { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 20 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'PO ' + month)
+  XLSX.writeFile(wb, `PO_GSO_${month}.xlsx`)
+  toast('Excel terdownload ✓')
+}
+function exportCustXlsx() {
+  if (!guardAdmin()) return
+  const data = customers.map(c => ({
+    'Nama': c.company || '', 'Tipe': c.customer_type || 'PT', 'Kontak': c.contact || '', 'Telp': c.tel || '',
+    'Email': c.email || '', 'Industri': c.industry || '', 'Area Besar': c.area_big || '', 'Area Kecil': c.area_small || '', 'Alamat': c.address || ''
+  }))
+  if (!data.length) { toast('Belum ada customer', false); return }
+  const ws = XLSX.utils.json_to_sheet(data)
+  ws['!cols'] = [{ wch: 34 }, { wch: 9 }, { wch: 18 }, { wch: 15 }, { wch: 24 }, { wch: 16 }, { wch: 15 }, { wch: 18 }, { wch: 40 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Customers')
+  XLSX.writeFile(wb, 'Customers_GSO.xlsx')
+  toast('Excel terdownload ✓')
 }
 
 // ── FASE 14: Attachment dokumen (PO & Data Barang Trading) ──

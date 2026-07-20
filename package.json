@@ -10,7 +10,8 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "jspdf": "^2.5.1",
-    "jspdf-autotable": "^3.8.2"
+    "jspdf-autotable": "^3.8.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "vite": "^5.0.0"
