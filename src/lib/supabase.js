@@ -46,6 +46,122 @@ export async function getCustomers() {
   return data
 }
 
+// ── FASE 9: STOCK ──
+export async function getStockItems() {
+  const { data, error } = await supabase.from('stock_items').select('*').order('part_number')
+  if (error) throw error
+  return data
+}
+export async function upsertStockItem(item) {
+  const { data, error } = await supabase.from('stock_items').upsert(item, { onConflict: 'part_number' }).select().single()
+  if (error) throw error
+  return data
+}
+export async function updateStockItem(id, fields) {
+  const { data, error } = await supabase.from('stock_items').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+export async function deleteStockItem(id) {
+  const { error } = await supabase.from('stock_items').delete().eq('id', id)
+  if (error) throw error
+}
+export async function getStockMoves(limit = 100) {
+  const { data, error } = await supabase.from('stock_moves')
+    .select('*, stock_items(part_number, name), profiles(name)')
+    .order('created_at', { ascending: false }).limit(limit)
+  if (error) throw error
+  return data
+}
+export async function addStockMove(m) {
+  const session = await getSession()
+  const { data, error } = await supabase.from('stock_moves').insert({ ...m, created_by: session.user.id })
+    .select('*, stock_items(part_number, name), profiles(name)').single()
+  if (error) throw error
+  return data
+}
+
+// ── FASE 12: PROJECT ──
+export async function getProjects() {
+  const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false })
+  if (error) throw error
+  return data
+}
+export async function addProject(p) {
+  const session = await getSession()
+  const { data, error } = await supabase.from('projects').insert({ ...p, created_by: session.user.id }).select().single()
+  if (error) throw error
+  return data
+}
+export async function updateProject(id, fields) {
+  const { data, error } = await supabase.from('projects').update(fields).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+export async function deleteProject(id) {
+  const { error } = await supabase.from('projects').delete().eq('id', id)
+  if (error) throw error
+}
+export async function getProjectChildren(pid) {
+  const [t, b, f, u] = await Promise.all([
+    supabase.from('project_tasks').select('*, profiles(name)').eq('project_id', pid).order('created_at'),
+    supabase.from('project_boms').select('*').eq('project_id', pid).order('created_at'),
+    supabase.from('project_files').select('*, profiles(name)').eq('project_id', pid).order('created_at', { ascending: false }),
+    supabase.from('project_updates').select('*, profiles(name)').eq('project_id', pid).order('created_at', { ascending: false }),
+  ])
+  for (const r of [t, b, f, u]) if (r.error) throw r.error
+  return { tasks: t.data, boms: b.data, files: f.data, updates: u.data }
+}
+export async function addProjectTask(row) {
+  const { data, error } = await supabase.from('project_tasks').insert(row).select('*, profiles(name)').single()
+  if (error) throw error
+  return data
+}
+export async function updateProjectTask(id, fields) {
+  const { data, error } = await supabase.from('project_tasks').update(fields).eq('id', id).select('*, profiles(name)').single()
+  if (error) throw error
+  return data
+}
+export async function deleteProjectTask(id) {
+  const { error } = await supabase.from('project_tasks').delete().eq('id', id)
+  if (error) throw error
+}
+export async function addProjectBom(row) {
+  const { data, error } = await supabase.from('project_boms').insert(row).select().single()
+  if (error) throw error
+  return data
+}
+export async function updateProjectBom(id, fields) {
+  const { data, error } = await supabase.from('project_boms').update(fields).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+export async function deleteProjectBom(id) {
+  const { error } = await supabase.from('project_boms').delete().eq('id', id)
+  if (error) throw error
+}
+export async function addProjectFile(row) {
+  const session = await getSession()
+  const { data, error } = await supabase.from('project_files').insert({ ...row, uploaded_by: session.user.id }).select('*, profiles(name)').single()
+  if (error) throw error
+  return data
+}
+export async function deleteProjectFile(id) {
+  const { error } = await supabase.from('project_files').delete().eq('id', id)
+  if (error) throw error
+}
+export async function addProjectUpdate(row) {
+  const session = await getSession()
+  const { data, error } = await supabase.from('project_updates').insert({ ...row, created_by: session.user.id }).select('*, profiles(name)').single()
+  if (error) throw error
+  return data
+}
+export async function getMyOpenTasks(uid) {
+  const { data, error } = await supabase.from('project_tasks').select('*, projects(name, stage)').eq('assignee_id', uid).eq('status', 'open').order('due_date')
+  if (error) throw error
+  return data
+}
+
 // FASE 14: upload lampiran ke Supabase Storage (bucket 'attachments') → balikin URL publik
 export async function uploadAttachment(file, folder) {
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
