@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -301,6 +301,31 @@ const isSuper = () => myRole === 'super_admin'
 const salesProfiles = () => {
   const hasFlag = profiles.some(p => p.is_sales !== undefined && p.is_sales !== null)
   return hasFlag ? profiles.filter(p => p.is_sales) : profiles.filter(p => p.role !== 'engineer')
+}
+
+// ── FASE 13: Normalisasi & dedup nama customer ──
+// Standar: "PT Nama Perusahaan" (PT tanpa titik, di depan). Perorangan/End User tidak dipaksa.
+function normCustKey(name) {
+  return (name || '').toUpperCase().replace(/\b(PT|CV|UD|TBK|PERSERO)\b/g, ' ').replace(/[^A-Z0-9]/g, '')
+}
+function titleWordCo(w) {
+  if (w.toUpperCase() === 'TBK') return 'Tbk'
+  if (/\d/.test(w)) return w.toUpperCase()
+  if (w.length <= 4 && !/[AIUEO]/i.test(w)) return w.toUpperCase() // akronim tanpa vokal: CBP, GSO, MMC
+  return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+}
+function normalizeCompanyName(raw) {
+  let s = (raw || '').trim().replace(/\s+/g, ' ')
+  if (!s) return s
+  let prefix = null
+  let m = s.match(/^(PT|CV|UD)\.?\s*/i) // prefix depan: "PT. X", "pt X"
+  if (m) { prefix = m[1].toUpperCase(); s = s.slice(m[0].length) }
+  m = s.match(/[\s.,]+(PT|CV|UD)\.?$/i) // suffix gaya Accurate: "X.PT", "X. PT", "X, PT"
+  if (m) { prefix = prefix || m[1].toUpperCase(); s = s.slice(0, m.index) }
+  s = s.replace(/[.,\s]+$/, '').trim()
+  if (!s) return raw.trim()
+  const core = s.split(' ').map(titleWordCo).join(' ')
+  return prefix ? prefix + ' ' + core : core
 }
 const canSeeVal = () => myRole !== 'engineer'
 const canQuote = () => myRole !== 'engineer'
@@ -718,8 +743,9 @@ export async function renderApp(container, user, logout) {
     <div class="sg" id="po-stats"></div>
     <div class="card" id="po-form-card">
       <div class="chd">🧾 Input PO Baru (khusus admin)</div>
-      <div class="g3" style="margin-bottom:8px;">
-        <div class="fld"><label>Nomor PO</label><input id="po-no" placeholder="PO-2026-001"></div>
+      <div class="g4" style="margin-bottom:8px;">
+        <div class="fld"><label>No. PO (dari customer)</label><input id="po-no" placeholder="PO17872251 / 023/CL/SPK/IV/2026"></div>
+        <div class="fld"><label>No. SO Accurate (opsional)</label><input id="po-so" placeholder="SO.2026.07.00003"></div>
         <div class="fld"><label>Tanggal PO</label><input type="date" id="po-date"></div>
         <div class="fld"><label>Customer</label><input id="po-cust" list="cust-dl" placeholder="Ketik nama customer..." autocomplete="off"></div>
       </div>
@@ -824,6 +850,19 @@ export async function renderApp(container, user, logout) {
     <div class="dtabs">
       <div class="dtab on" id="dt-customer" onclick="switchDbTab('customer')">👥 Customer</div>
       <div class="dtab" id="dt-product" onclick="switchDbTab('product')">📦 Produk Tersimpan</div>
+      <div class="dtab" id="dt-clean" onclick="switchDbTab('clean')" style="display:none;">🧹 Rapikan Data</div>
+    </div>
+
+    <!-- Rapikan Data (Fase 13, admin only) -->
+    <div id="db-clean-panel" style="display:none;">
+      <div class="card">
+        <div class="chd">📛 Nama Belum Standar — format baku: "PT Nama Perusahaan" (tanpa titik)</div>
+        <div id="clean-nonstd"></div>
+      </div>
+      <div class="card">
+        <div class="chd">👯 Kandidat Duplikat — pilih satu untuk dipertahankan, sisanya digabung</div>
+        <div id="clean-dups"></div>
+      </div>
     </div>
 
     <!-- Customer tab -->
@@ -849,9 +888,10 @@ export async function renderApp(container, user, logout) {
             </div>
           </div>
           <div class="g2" style="margin-bottom:8px;">
-            <div class="fld"><label>Nama Perusahaan / Nama</label><input id="nc-name" placeholder="PT. Nama Perusahaan / Pak Budi"></div>
+            <div class="fld"><label>Nama Perusahaan / Nama</label><input id="nc-name" placeholder="PT Nama Perusahaan / Pak Budi"></div>
             <div class="fld"><label>Kontak Person</label><input id="nc-contact" placeholder="Pak Budi"></div>
           </div>
+          <div id="nc-dup-warn" style="display:none;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:11px;padding:7px 10px;border-radius:7px;margin-bottom:8px;"></div>
           <div class="g3" style="margin-bottom:8px;">
             <div class="fld"><label>Telp / Mobile</label><input id="nc-tel" placeholder="+62 812..."></div>
             <div class="fld"><label>Email</label><input id="nc-email" placeholder="email@perusahaan.com"></div>
@@ -1019,6 +1059,7 @@ export async function renderApp(container, user, logout) {
     showCtDrop, hideCtDrop, pickCt, showVCtDrop, hideVCtDrop, pickVCt,
     partSearch, hidePartDrop, pickPart,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
+    renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -1064,6 +1105,8 @@ function applyRoleUI() {
     })
     const vt = document.getElementById('visit-target'); if (vt) vt.disabled = true
   }
+  // FASE 13: tab Rapikan Data khusus admin
+  const dtClean = document.getElementById('dt-clean'); if (dtClean) dtClean.style.display = isAdmin() ? '' : 'none'
 }
 
 // ── PROFILE ──
@@ -1153,8 +1196,79 @@ function switchDbTab(tab) {
   dbTab = tab
   document.getElementById('db-customer-panel').style.display = tab === 'customer' ? '' : 'none'
   document.getElementById('db-product-panel').style.display = tab === 'product' ? '' : 'none'
+  const cp = document.getElementById('db-clean-panel'); if (cp) cp.style.display = tab === 'clean' ? '' : 'none'
   document.getElementById('dt-customer').classList.toggle('on', tab === 'customer')
   document.getElementById('dt-product').classList.toggle('on', tab === 'product')
+  const dc = document.getElementById('dt-clean'); if (dc) dc.classList.toggle('on', tab === 'clean')
+  if (tab === 'clean') renderCleanPanel()
+}
+
+// ── FASE 13: panel Rapikan Data ──
+let dupGroupsCache = []
+function renderCleanPanel() {
+  const ns = document.getElementById('clean-nonstd'), du = document.getElementById('clean-dups')
+  if (!ns || !du) return
+  const nonstd = customers.filter(c => (c.customer_type || 'PT') === 'PT' && c.company && normalizeCompanyName(c.company) !== c.company)
+  ns.innerHTML = (nonstd.length ? `<div style="margin-bottom:8px;"><button class="bp" style="padding:6px 12px;font-size:11px;" onclick="fixAllNames()">✨ Rapikan Semua (${nonstd.length})</button></div>` : '') +
+    (nonstd.map(c => `<div class="dbi">
+      <div style="flex:1;"><div class="dn">${c.company}</div><div class="dm" style="color:#16a34a;">→ ${normalizeCompanyName(c.company)}</div></div>
+      <button class="bxs" onclick="fixOneName('${c.id}')">Rapikan</button>
+    </div>`).join('') || '<div class="empty">Semua nama sudah standar ✓</div>')
+
+  const groups = {}
+  customers.forEach(c => { const k = normCustKey(c.company); if (!k) return; (groups[k] = groups[k] || []).push(c) })
+  dupGroupsCache = Object.values(groups).filter(g => g.length > 1)
+  du.innerHTML = dupGroupsCache.length ? dupGroupsCache.map((g, gi) => `
+    <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:9px 11px;margin-bottom:8px;">
+      ${g.map((c, ci) => `<label style="display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0;cursor:pointer;">
+        <input type="radio" name="dupg-${gi}" value="${c.id}"${ci === 0 ? ' checked' : ''}>
+        <b>${c.company || '-'}</b><span style="color:#94a3b8;font-size:10px;">${[c.contact, c.tel, c.industry].filter(Boolean).join(' · ')}</span>
+      </label>`).join('')}
+      <div style="font-size:10px;color:#92400e;margin:4px 0 6px;">Kontak & visit ikut pindah ke yang dipertahankan; nama di shodan/PO/visit disamakan; duplikat dihapus.</div>
+      <button class="bxs" style="border-color:#f59e0b;color:#92400e;" onclick="mergeDupGroup(${gi})">🔀 Gabungkan Grup Ini</button>
+    </div>`).join('') : '<div class="empty">Tidak ada duplikat terdeteksi ✓</div>'
+}
+
+async function fixOneName(id) {
+  if (!guardAdmin()) return
+  const c = customers.find(x => x.id === id); if (!c) return
+  try {
+    const u = await updateCustomerFields(id, { company: normalizeCompanyName(c.company) })
+    const i = customers.findIndex(x => x.id === id); if (i >= 0) customers[i] = u
+    renderCleanPanel(); toast('Nama dirapikan: ' + u.company)
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function fixAllNames() {
+  if (!guardAdmin()) return
+  const nonstd = customers.filter(c => (c.customer_type || 'PT') === 'PT' && c.company && normalizeCompanyName(c.company) !== c.company)
+  let ok = 0, fail = 0
+  for (const c of nonstd) {
+    try {
+      const u = await updateCustomerFields(c.id, { company: normalizeCompanyName(c.company) })
+      const i = customers.findIndex(x => x.id === c.id); if (i >= 0) customers[i] = u
+      ok++
+    } catch (e) { fail++; console.error(c.company, e) }
+  }
+  renderCleanPanel(); renderCustList('')
+  toast(`${ok} nama dirapikan` + (fail ? `, ${fail} gagal` : ''))
+}
+
+async function mergeDupGroup(gi) {
+  if (!guardAdmin()) return
+  const g = dupGroupsCache[gi]; if (!g) return
+  const keepId = document.querySelector(`input[name="dupg-${gi}"]:checked`)?.value
+  const keep = g.find(c => c.id === keepId); if (!keep) { toast('Pilih dulu yang dipertahankan', false); return }
+  const drops = g.filter(c => c.id !== keepId)
+  try {
+    for (const d of drops) {
+      await mergeCustomerInto(keep.id, keep.company, d.id, d.company)
+      const i = customers.findIndex(x => x.id === d.id); if (i >= 0) customers.splice(i, 1)
+    }
+    renderCleanPanel(); renderCustList('')
+    document.getElementById('cc').textContent = customers.length
+    toast(`${drops.length} duplikat digabung ke "${keep.company}"`)
+  } catch (e) { toast('Gagal merge: ' + e.message, false) }
 }
 
 // AUTOCOMPLETE
@@ -1816,7 +1930,7 @@ function renderPO() {
   bd.innerHTML = filtered.map(p => {
     const quo = p.quotation_id ? pipeline.find(h => h.id === p.quotation_id) : null
     return `<tr>
-      <td style="font-weight:600;white-space:nowrap;">${p.po_number || '-'}</td>
+      <td style="font-weight:600;white-space:nowrap;">${p.po_number || '-'}${p.so_number ? `<div style="font-size:9px;color:#94a3b8;font-weight:400;">${p.so_number}</div>` : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${fmtD(p.po_date)}</td>
       <td>${p.customer_name || '-'}${p.notes ? `<div style="font-size:10px;color:#94a3b8;">${p.notes}</div>` : ''}</td>
       <td style="font-size:11px;color:#64748b;">${poSalesName(p)}</td>
@@ -1839,6 +1953,7 @@ async function savePO() {
   try {
     const p = await addPO({
       po_number: no,
+      so_number: gv('po-so').trim() || null,
       po_date: gv('po-date') || new Date().toISOString().slice(0, 10),
       customer_name: gv('po-cust'),
       sales_id: gv('po-sales-in') || null,
@@ -1853,7 +1968,7 @@ async function savePO() {
         const h = pipeline.find(x => x.id === p.quotation_id); if (h) h.status = 'Closed - Won'
       } catch (e) { console.error(e) }
     }
-    ;['po-no', 'po-cust', 'po-amount', 'po-notes'].forEach(id => document.getElementById(id).value = '')
+    ;['po-no', 'po-so', 'po-cust', 'po-amount', 'po-notes'].forEach(id => document.getElementById(id).value = '')
     document.getElementById('po-quo').value = ''
     renderPO(); toast('PO tersimpan!')
   } catch (e) { toast('Gagal: ' + e.message, false) }
@@ -2705,6 +2820,8 @@ let custTypeFilter = 'all'
 function toggleAddCust() {
   const el = document.getElementById('add-cust-form')
   el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none'
+  custDupConfirmed = false
+  const w = document.getElementById('nc-dup-warn'); if (w) w.style.display = 'none'
 }
 
 function setNewCustType(type) {
@@ -2718,10 +2835,26 @@ function setCustTypeFilter(val) {
   renderCustList(document.querySelector('.filter-bar input')?.value || '')
 }
 
+let custDupConfirmed = false
 async function saveNewCust() {
   if (!guardAdmin()) return
-  const name = document.getElementById('nc-name').value.trim()
-  if (!name) { toast('Nama wajib diisi', false); return }
+  const rawName = document.getElementById('nc-name').value.trim()
+  if (!rawName) { toast('Nama wajib diisi', false); return }
+  // FASE 13: normalisasi otomatis (hanya tipe PT/perusahaan) + warning nama mirip
+  const name = newCustType === 'PT' ? normalizeCompanyName(rawName) : rawName
+  const warnEl = document.getElementById('nc-dup-warn')
+  const sim = customers.find(c => normCustKey(c.company) === normCustKey(name))
+  if (sim && !custDupConfirmed) {
+    custDupConfirmed = true
+    if (warnEl) {
+      warnEl.style.display = ''
+      warnEl.innerHTML = `⚠️ Mirip dengan customer yang sudah ada: <b>${sim.company}</b>. Kalau memang beda perusahaan, klik <b>Simpan</b> sekali lagi.`
+    }
+    return
+  }
+  custDupConfirmed = false
+  if (warnEl) warnEl.style.display = 'none'
+  if (name !== rawName) toast('Nama dirapikan otomatis: ' + name)
   const btn = document.getElementById('btn-save-cust')
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'
   try {
@@ -2831,8 +2964,12 @@ function cancelEditCust() {
 
 async function saveEditCust(id) {
   if (!guardAdmin()) return
-  const name = document.getElementById('ec-name').value.trim()
+  let name = document.getElementById('ec-name').value.trim()
   if (!name) { toast('Nama wajib diisi', false); return }
+  if (editCustType === 'PT') {
+    const norm = normalizeCompanyName(name)
+    if (norm !== name) { toast('Nama dirapikan otomatis: ' + norm); name = norm }
+  }
   const btn = document.getElementById('btn-save-edit-cust')
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'
   try {

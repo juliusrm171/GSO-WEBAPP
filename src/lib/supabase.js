@@ -46,6 +46,32 @@ export async function getCustomers() {
   return data
 }
 
+// FASE 13: update sebagian kolom customer (tanpa menyentuh kolom lain)
+export async function updateCustomerFields(id, fields) {
+  const { data, error } = await supabase.from('customers').update(fields).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// FASE 13: gabungkan customer duplikat → pindahkan semua relasi lalu hapus duplikatnya
+export async function mergeCustomerInto(keepId, keepName, dropId, dropName) {
+  let r = await supabase.from('customer_contacts').update({ customer_id: keepId }).eq('customer_id', dropId)
+  if (r.error) throw r.error
+  r = await supabase.from('visits').update({ customer_id: keepId, customer_name: keepName }).eq('customer_id', dropId)
+  if (r.error) throw r.error
+  // samakan nama teks di tabel yang menyimpan nama customer sebagai string
+  if (dropName && dropName !== keepName) {
+    r = await supabase.from('visits').update({ customer_name: keepName }).eq('customer_name', dropName)
+    if (r.error) throw r.error
+    r = await supabase.from('shodans').update({ customer_name: keepName }).eq('customer_name', dropName)
+    if (r.error) throw r.error
+    r = await supabase.from('purchase_orders').update({ customer_name: keepName }).eq('customer_name', dropName)
+    if (r.error) throw r.error
+  }
+  r = await supabase.from('customers').delete().eq('id', dropId)
+  if (r.error) throw r.error
+}
+
 export async function upsertCustomer(customer) {
   const session = await getSession()
   const payload = { ...customer, created_by: session.user.id }
