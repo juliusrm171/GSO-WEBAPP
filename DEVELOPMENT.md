@@ -45,6 +45,7 @@ Dikerjakan sebelum pipeline karena pipeline akan menarik data dari quotation.
 Dikerjakan setelah Fase 3-4 karena butuh data FU yang sudah stabil.
 
 - Shodan/pipeline tanpa update 2 minggu → kirim reminder otomatis ke **email kantor + Gmail pribadi sales ybs** dan buat event di **Google Calendar** sales
+- **Tahapan project lewat deadline** (Fase 12: milestone dengan durasi & target tanggal) → ikut dikirim di reminder email harian yang sama (data sudah tersedia via `getOverdueMilestones`)
 - **Calendar:** tiap sales menghubungkan **Gmail pribadinya** sekali via login Google (OAuth) di halaman profil → event reminder masuk calendar pribadi (keputusan 20 Jul 2026)
 - **Email sales:** tiap user punya 2 alamat di profilnya — email kantor (@gso.co.id) + Gmail pribadi; keduanya dikirimi reminder. Daftar alamat 3 user awal sudah diterima dari Julius (20 Jul) — disimpan di catatan internal, tidak di-commit ke repo publik
 - Teknis: Supabase Edge Function + pg_cron (cek harian); email via SMTP webmail GSO (kredensial menyusul) atau Resend; calendar via Google Calendar API (Google Cloud project + OAuth — akan dipandu)
