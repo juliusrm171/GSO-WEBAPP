@@ -85,6 +85,18 @@ Independen — modul baru.
 - Filter/pisah view database customer per area
 - *Open: daftar area final menunggu diskusi internal — buat fleksibel (admin bisa tambah area sendiri)*
 
+## FASE 11 — Export & Import Excel (ditambahkan 20 Jul 2026)
+Semua jalan di sisi browser (SheetJS), tanpa server tambahan.
+
+- **Export data ke Excel/CSV** dari web: customer, pricelist, pipeline/shodan, PO, visit, dan stock (setelah Fase 9)
+  - Sesuai aturan Fase 1: tombol export hanya tampil untuk **super_admin & admin**
+- **Import/update via upload Excel** (bulk update):
+  - Download template → isi di Excel → upload → **preview perubahan** ("X item di-update, Y item baru") → konfirmasi → upsert ke Supabase
+  - Kasus utama: **update stock** (barang masuk/keluar massal, digabung pengerjaannya dengan Fase 9)
+  - Bisa dipakai ulang untuk: update harga pricelist massal per kuartal, import customer sekaligus
+- Validasi saat import: kolom wajib, format angka, duplikat; baris bermasalah ditampilkan di preview, tidak langsung merusak data
+- *Open: tab mana saja yang dapat tombol export; format xlsx saja atau plus CSV*
+
 ---
 
 ## Keputusan Tambahan (17 Jul 2026)
