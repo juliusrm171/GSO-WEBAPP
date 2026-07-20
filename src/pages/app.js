@@ -486,6 +486,7 @@ export async function renderApp(container, user, logout) {
     </div>
     <div id="dash-page2" style="display:none;"></div>
     <div id="dash-page1">
+    <div id="dash-attention"></div>
     <div class="sg" id="dash-stats"></div>
 
     <!-- Grafik penjualan (PO) -->
@@ -3836,6 +3837,64 @@ function fuAge(baseDate) {
   return Math.floor((Date.now() - new Date(baseDate).getTime()) / 86400000)
 }
 
+// ── Panel "Perlu Perhatian" — pusat aksi harian (gabungan rotting, project telat, PO belum assign, stok habis) ──
+function renderAttention() {
+  const el = document.getElementById('dash-attention'); if (!el) return
+  const items = []
+  const today = new Date().toISOString().slice(0, 10)
+  const mine = myRole === 'sales' // sales lihat miliknya; admin/super lihat semua
+  const isMineDeal = h => !mine || h.created_by === currentUser?.id
+
+  // 1) Pipeline/shodan rotting (> 14 hari tanpa update)
+  pipeline.filter(h => ['Open', 'Nego', 'On Hold'].includes(h.status) && isMineDeal(h)).forEach(h => {
+    const age = fuAge(h.last_fu || h.date || h.created_at)
+    if (age > 14) items.push({ icon: '🕐', bg: '#fffbeb', pill: 'Follow-up', pc: '#b45309',
+      text: `<b>${esc(h.customer_snapshot?.company || h.qo_number || '-')}</b> — pipeline tanpa update`, meta: `${age} hari · ${esc(h.profiles?.name || h.sales_name || '-')}`, sort: age })
+  })
+  shodans.filter(s => s.status === 'Open' && (!mine || s.created_by === currentUser?.id)).forEach(s => {
+    const age = fuAge(s.last_fu || s.created_at)
+    if (age > 14) items.push({ icon: '🕐', bg: '#fffbeb', pill: 'Follow-up', pc: '#b45309',
+      text: `<b>${esc(s.customer_name || s.title || '-')}</b> — shodan tanpa update`, meta: `${age} hari`, sort: age })
+  })
+
+  // 2) Tahap project lewat deadline (admin/super saja — engineer punya dashboard sendiri)
+  if (isAdmin()) overdueMs.forEach(m => {
+    const days = Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000)
+    items.push({ icon: '⏰', bg: '#fef2f2', pill: 'Telat', pc: '#b91c1c',
+      text: `<b>${esc(m.projects.name)}</b> — ${esc(m.title)}`, meta: `target ${fmtD(m.target_date)}, telat ${days} hari`, sort: 1000 + days,
+      onclick: `nav('project');setTimeout(()=>togglePrjDetail('${m.projects.id}'),50)` })
+  })
+
+  // 3) PO belum di-assign sales (admin saja) — mengacaukan leaderboard
+  if (isAdmin()) {
+    const salesIds = new Set(salesProfiles().map(p => p.id))
+    const un = pos.filter(p => !p.sales_id || !salesIds.has(p.sales_id)).length
+    if (un) items.push({ icon: '🧾', bg: '#eff6ff', pill: 'Assign', pc: '#1d4ed8',
+      text: `<b>${un} PO</b> belum ada sales-nya`, meta: 'set di tab PO agar leaderboard akurat', sort: 500, onclick: `nav('po')` })
+  }
+
+  // 4) Stok habis (admin saja)
+  if (isAdmin()) {
+    const habis = stockItems.filter(i => +i.qty <= 0).length
+    if (habis) items.push({ icon: '📦', bg: '#fef2f2', pill: 'Restock', pc: '#b91c1c',
+      text: `<b>${habis} item stock</b> habis (saldo 0)`, meta: 'cek tab Stock', sort: 400, onclick: `nav('stock')` })
+  }
+
+  if (!items.length) { el.innerHTML = ''; return }
+  items.sort((a, b) => b.sort - a.sort)
+  el.innerHTML = `
+    <div style="background:#fff;border:1px solid var(--line,#e6ebf2);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.06);overflow:hidden;margin-bottom:12px;">
+      <div style="background:linear-gradient(90deg,#fff7f7,#fff);padding:10px 15px;font-weight:700;font-size:13px;color:#b91c1c;border-bottom:1px solid #f1f5f9;">🔔 Perlu Perhatian — ${items.length} hal</div>
+      ${items.slice(0, 12).map(i => `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 15px;border-bottom:1px solid #f1f5f9;font-size:12.5px;${i.onclick ? 'cursor:pointer;' : ''}"${i.onclick ? ` onclick="${i.onclick}"` : ''}>
+          <div style="width:26px;height:26px;border-radius:8px;background:${i.bg};display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">${i.icon}</div>
+          <div style="flex:1;">${i.text}<div style="font-size:11px;color:#94a3b8;">${i.meta}</div></div>
+          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${i.bg};color:${i.pc};white-space:nowrap;">${i.pill}</span>
+        </div>`).join('')}
+      ${items.length > 12 ? `<div style="font-size:11px;color:#94a3b8;padding:7px 15px;">…dan ${items.length - 12} lainnya</div>` : ''}
+    </div>`
+}
+
 function renderFuAlerts() {
   const card = document.getElementById('fu-alert-card'), list = document.getElementById('fu-alert-list')
   if (!card || !list) return
@@ -3865,7 +3924,8 @@ function renderFuAlerts() {
 function renderDashboard() {
   const greetName = (currentUser?.email || '').split('@')[0]
   const greetEl = document.getElementById('db-greet')
-  if (greetEl) greetEl.innerHTML = `Halo, <span>${greetName}</span> 👋`
+  if (greetEl) greetEl.innerHTML = `Halo, <span>${esc(greetName)}</span> 👋`
+  renderAttention()
 
   // Overall stats — berbasis PO riil + pipeline
   const nowYm = curMonth(), nowYear = nowYm.slice(0, 4)
