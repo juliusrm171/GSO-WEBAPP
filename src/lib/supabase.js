@@ -103,14 +103,29 @@ export async function deleteProject(id) {
   if (error) throw error
 }
 export async function getProjectChildren(pid) {
-  const [t, b, f, u] = await Promise.all([
+  const [t, b, f, u, m] = await Promise.all([
     supabase.from('project_tasks').select('*, profiles(name)').eq('project_id', pid).order('created_at'),
     supabase.from('project_boms').select('*').eq('project_id', pid).order('created_at'),
     supabase.from('project_files').select('*, profiles(name)').eq('project_id', pid).order('created_at', { ascending: false }),
     supabase.from('project_updates').select('*, profiles(name)').eq('project_id', pid).order('created_at', { ascending: false }),
+    supabase.from('project_milestones').select('*').eq('project_id', pid).order('target_date', { ascending: true, nullsFirst: false }),
   ])
-  for (const r of [t, b, f, u]) if (r.error) throw r.error
-  return { tasks: t.data, boms: b.data, files: f.data, updates: u.data }
+  for (const r of [t, b, f, u, m]) if (r.error) throw r.error
+  return { tasks: t.data, boms: b.data, files: f.data, updates: u.data, milestones: m.data }
+}
+export async function addProjectMilestone(row) {
+  const { data, error } = await supabase.from('project_milestones').insert(row).select().single()
+  if (error) throw error
+  return data
+}
+export async function updateProjectMilestone(id, fields) {
+  const { data, error } = await supabase.from('project_milestones').update(fields).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+export async function deleteProjectMilestone(id) {
+  const { error } = await supabase.from('project_milestones').delete().eq('id', id)
+  if (error) throw error
 }
 export async function addProjectTask(row) {
   const { data, error } = await supabase.from('project_tasks').insert(row).select('*, profiles(name)').single()

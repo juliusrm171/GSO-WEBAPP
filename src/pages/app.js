@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone } from '../lib/supabase.js'
 import * as XLSX from 'xlsx'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
@@ -1217,6 +1217,7 @@ export async function renderApp(container, user, logout) {
     pickImportStock, confirmImportStock, cancelImportStock, stockImpToggle, exportStockXlsx,
     togglePrjForm, savePrj, renderPrjList, togglePrjDetail, updPrjStage, delPrj, loadProjectsData,
     addBomRow, updBomStatus, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
+    addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -2655,17 +2656,43 @@ async function togglePrjDetail(id) {
 function renderPrjDetail(p) {
   if (!prjChildren) return '<div class="empty">Memuat detail…</div>'
   const { tasks, boms, files, updates } = prjChildren
+  const milestones = prjChildren.milestones || []
   const quo = p.quotation_id ? pipeline.find(h => h.id === p.quotation_id) : null
   const po = p.po_id ? pos.find(x => x.id === p.po_id) : null
   const BOM_ST = { pending: ['#94a3b8', 'Pending'], dipesan: ['#d97706', 'Dipesan'], tiba: ['#16a34a', 'Tiba'] }
+  const today = new Date().toISOString().slice(0, 10)
+  const designFiles = files.filter(f => f.kind === 'design')
+  const reportFiles = files.filter(f => f.kind === 'report')
+  const otherFiles = files.filter(f => f.kind === 'doc' || f.kind === 'foto')
+  const reports = updates.filter(u => u.kind === 'report')
+  const feed = updates.filter(u => u.kind !== 'report')
+  const fileChip = fl => `<a href="${fl.url}" target="_blank" style="font-size:10px;color:#1d4ed8;text-decoration:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:5px;padding:2px 7px;">${{ design: '📐', report: '📝', doc: '📄', foto: '📷' }[fl.kind] || '📄'} ${(fl.name || 'file').slice(0, 26)}</a>`
   return `
   <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin:4px 0 10px;background:#f8fafc;">
     ${p.description ? `<div style="font-size:12px;color:#475569;margin-bottom:8px;">${p.description}</div>` : ''}
     <div style="font-size:11px;color:#64748b;margin-bottom:10px;">
-      ${quo ? `📄 ${quo.qo_number}` : ''} ${po ? ` · 🧾 ${po.po_number}` : ''} ${p.start_date ? ` · mulai ${fmtD(p.start_date)}` : ''}
+      ${quo ? `📄 ${quo.qo_number}` : ''} ${po ? ` · 🧾 ${po.po_number}` : ''} ${p.start_date ? ` · mulai ${fmtD(p.start_date)}` : ''}${p.due_date ? ` · target selesai <b style="color:${p.due_date < today && p.stage !== 'Selesai' ? '#dc2626' : '#002060'};">${fmtD(p.due_date)}</b>` : ''}
     </div>
 
-    <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:5px;">📋 BOM LIST (${boms.length})</div>
+    <div style="font-size:11px;font-weight:700;color:#002060;margin:0 0 5px;">📅 TIMELINE PROJECT (${milestones.filter(m => m.done).length}/${milestones.length} milestone)</div>
+    ${milestones.map(m => {
+      const late = !m.done && m.target_date && m.target_date < today
+      return `<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;">
+        <input type="checkbox"${m.done ? ' checked' : ''} onchange="toggleMilestone('${m.id}',this.checked)">
+        <div style="flex:1;${m.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${m.title}</div>
+        ${m.target_date ? `<span style="font-size:10px;font-weight:${late ? '700' : '500'};color:${m.done ? '#16a34a' : late ? '#dc2626' : '#64748b'};">${late ? '⚠ TELAT · ' : ''}target ${fmtD(m.target_date)}</span>` : ''}
+        ${m.done && m.done_date ? `<span style="font-size:10px;color:#16a34a;">✓ ${fmtD(m.done_date)}</span>` : ''}
+        ${isAdmin() ? `<button class="bdel" style="font-size:10px;" onclick="delMilestone('${m.id}')">✕</button>` : ''}
+      </div>`
+    }).join('') || '<div style="font-size:11px;color:#94a3b8;">Belum ada milestone. Tambahkan jadwal supaya timeline project terjaga.</div>'}
+    ${isAdmin() ? `
+    <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
+      <input id="ms-title" placeholder="Milestone (mis. Barang tiba di site)" style="flex:2;min-width:140px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+      <input id="ms-date" type="date" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+      <button class="bxs" onclick="addMilestoneRow('${p.id}')">+ Milestone</button>
+    </div>` : ''}
+
+    <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">📋 BOM LIST (${boms.length})</div>
     ${boms.map(b => `
       <div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;">
         <div style="flex:1;"><b>${b.part_number || '-'}</b> ${b.description || ''} × ${+b.qty}</div>
@@ -2706,26 +2733,47 @@ function renderPrjDetail(p) {
       <button class="bxs" onclick="addPrjTaskRow('${p.id}')">+ Task</button>
     </div>` : ''}
 
-    <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">📁 FILE — Design / Report / Dokumen / Foto (${files.length})</div>
+    <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">📐 DESIGN — mounting camera, panel control, drawing (${designFiles.length})</div>
     <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">
-      ${files.map(fl => `<span style="display:inline-flex;align-items:center;gap:3px;">
-        <a href="${fl.url}" target="_blank" style="font-size:10px;color:#1d4ed8;text-decoration:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:5px;padding:2px 7px;">${{ design: '📐', report: '📝', doc: '📄', foto: '📷' }[fl.kind] || '📄'} ${(fl.name || 'file').slice(0, 24)}</a>
-      </span>`).join('') || '<span style="font-size:11px;color:#94a3b8;">Belum ada file.</span>'}
+      ${designFiles.map(fileChip).join('') || '<span style="font-size:11px;color:#94a3b8;">Belum ada dokumen design.</span>'}
+      <button class="bxs" onclick="uploadPrjFile('${p.id}','design')">+ Upload Design</button>
     </div>
-    <div style="display:flex;gap:5px;flex-wrap:wrap;">
-      <button class="bxs" onclick="uploadPrjFile('${p.id}','design')">+ Design</button>
-      <button class="bxs" onclick="uploadPrjFile('${p.id}','report')">+ Report</button>
+
+    <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">📝 REPORT ENGINEER — hasil pekerjaan (${reports.length})</div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px;margin-bottom:7px;">
+      <textarea id="rep-note" placeholder="Tulis laporan hasil pekerjaan... (apa yang dikerjakan, hasil, kendala)" style="width:100%;min-height:48px;padding:6px 9px;border:1px solid #e2e8f0;border-radius:6px;font-size:11.5px;font-family:inherit;resize:vertical;"></textarea>
+      <div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;align-items:center;">
+        <button class="bs" style="padding:5px 9px;font-size:11px;" onclick="pickRepPhoto()">📷 Foto Hasil</button>
+        <span id="rep-photo-name" style="font-size:10px;color:#16a34a;"></span>
+        <button class="bs" style="padding:5px 9px;font-size:11px;" onclick="uploadPrjFile('${p.id}','report')">📎 Attach File Report</button>
+        <span style="flex:1;"></span>
+        <button class="bp" style="padding:5px 12px;font-size:11px;" onclick="addPrjReport('${p.id}')">Kirim Report</button>
+      </div>
+    </div>
+    ${reportFiles.length ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">${reportFiles.map(fileChip).join('')}</div>` : ''}
+    ${reports.slice(0, 15).map(u => `
+      <div style="display:flex;gap:8px;padding:6px 8px;margin-bottom:4px;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;font-size:11.5px;">
+        <div style="flex:1;">
+          <b>👷 ${u.profiles?.name || '-'}</b> <span style="color:#94a3b8;font-size:10px;">${new Date(u.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+          <div style="white-space:pre-wrap;">${u.note || ''}</div>
+        </div>
+        ${u.photo_url ? `<a href="${u.photo_url}" target="_blank"><img src="${u.photo_url}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;"></a>` : ''}
+      </div>`).join('') || '<div style="font-size:11px;color:#94a3b8;">Belum ada report dari engineer.</div>'}
+
+    <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">📄 DOKUMEN & FOTO LAIN (${otherFiles.length})</div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">
+      ${otherFiles.map(fileChip).join('') || '<span style="font-size:11px;color:#94a3b8;">Belum ada.</span>'}
       <button class="bxs" onclick="uploadPrjFile('${p.id}','doc')">+ Dokumen</button>
       <button class="bxs" onclick="uploadPrjFile('${p.id}','foto')">+ Foto</button>
     </div>
 
-    <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">🕐 TIMELINE / PROGRESS UPDATE (${updates.length})</div>
+    <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">🕐 AKTIVITAS / UPDATE (${feed.length})</div>
     <div style="display:flex;gap:5px;margin-bottom:7px;flex-wrap:wrap;">
-      <input id="upd-note" placeholder="Tulis update progress..." style="flex:1;min-width:150px;padding:6px 9px;border:1px solid #e2e8f0;border-radius:6px;font-size:11.5px;">
+      <input id="upd-note" placeholder="Tulis update singkat..." style="flex:1;min-width:150px;padding:6px 9px;border:1px solid #e2e8f0;border-radius:6px;font-size:11.5px;">
       <button class="bs" style="padding:5px 9px;font-size:11px;" onclick="pickUpdPhoto()">📷</button><span id="upd-photo-name" style="font-size:10px;color:#16a34a;align-self:center;"></span>
-      <button class="bp" style="padding:5px 11px;font-size:11px;" onclick="addPrjUpdateRow('${p.id}')">Kirim Update</button>
+      <button class="bp" style="padding:5px 11px;font-size:11px;" onclick="addPrjUpdateRow('${p.id}')">Kirim</button>
     </div>
-    ${updates.slice(0, 20).map(u => `
+    ${feed.slice(0, 20).map(u => `
       <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px dashed #e2e8f0;font-size:11.5px;">
         <div style="flex:1;">
           <b>${u.profiles?.name || '-'}</b> <span style="color:#94a3b8;font-size:10px;">${new Date(u.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>${u.stage ? ' ' + prjStageBadge(u.stage) : ''}
@@ -2734,6 +2782,60 @@ function renderPrjDetail(p) {
         ${u.photo_url ? `<a href="${u.photo_url}" target="_blank"><img src="${u.photo_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;"></a>` : ''}
       </div>`).join('') || '<div style="font-size:11px;color:#94a3b8;">Belum ada update.</div>'}
   </div>`
+}
+
+// ── FASE 12: Milestone (timeline project) & Report engineer ──
+async function addMilestoneRow(pid) {
+  if (!guardAdmin()) return
+  const title = document.getElementById('ms-title')?.value.trim()
+  if (!title) { toast('Isi nama milestone', false); return }
+  try {
+    const m = await addProjectMilestone({ project_id: pid, title, target_date: document.getElementById('ms-date')?.value || null })
+    if (prjChildren) { prjChildren.milestones = prjChildren.milestones || []; prjChildren.milestones.push(m); prjChildren.milestones.sort((a, b) => (a.target_date || '9999').localeCompare(b.target_date || '9999')) }
+    renderPrjList()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+async function toggleMilestone(id, done) {
+  try {
+    const m = await updateProjectMilestone(id, { done, done_date: done ? new Date().toISOString().slice(0, 10) : null })
+    if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
+    renderPrjList()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+async function delMilestone(id) {
+  if (!guardAdmin()) return
+  try {
+    await deleteProjectMilestone(id)
+    if (prjChildren?.milestones) prjChildren.milestones = prjChildren.milestones.filter(x => x.id !== id)
+    renderPrjList()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+let repPhotoFile = null
+function pickRepPhoto() {
+  let inp = document.getElementById('rep-photo-input')
+  if (!inp) {
+    inp = document.createElement('input')
+    inp.type = 'file'; inp.id = 'rep-photo-input'; inp.accept = 'image/*'; inp.capture = 'environment'; inp.style.display = 'none'
+    document.body.appendChild(inp)
+  }
+  inp.onchange = () => {
+    repPhotoFile = inp.files[0] || null
+    const lbl = document.getElementById('rep-photo-name'); if (lbl) lbl.textContent = repPhotoFile ? '✓ foto siap' : ''
+    inp.value = ''
+  }
+  inp.click()
+}
+async function addPrjReport(pid) {
+  const note = document.getElementById('rep-note')?.value.trim()
+  if (!note && !repPhotoFile) { toast('Tulis laporan atau lampirkan foto hasil', false); return }
+  try {
+    let photo_url = null
+    if (repPhotoFile) { const att = await uploadAttachment(repPhotoFile, 'projects/' + pid); photo_url = att.url }
+    const u = await addProjectUpdate({ project_id: pid, note: note || null, photo_url, kind: 'report' })
+    if (prjChildren && expandedPrjId === pid) prjChildren.updates.unshift(u)
+    repPhotoFile = null
+    renderPrjList(); toast('Report terkirim ✓')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 async function updPrjStage(id, stage) {
   if (!guardAdmin()) return
