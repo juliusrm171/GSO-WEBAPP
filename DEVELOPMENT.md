@@ -108,6 +108,16 @@ Tab baru yang menggabungkan seluruh siklus project dalam satu tempat. Cakupan (h
 - Saran urutan pengerjaan: setelah Fase 9 (biar bisa link ke stock/delivery), atau paralel karena strukturnya modul baru
 - *Open: tahapan status project final (nama & urutannya); siapa boleh buat project (admin saja atau sales juga)*
 
+## FASE 13 — Pembersihan & Standarisasi Database Customer (ditambahkan 20 Jul 2026)
+Data hygiene: hapus duplikat + standar penamaan, supaya pipeline/dashboard/report akurat.
+
+- **Deduplikasi customer:** deteksi entri double (nama mirip: beda kapitalisasi, spasi, dengan/tanpa "PT", typo) → tampilkan kandidat duplikat → admin pilih merge; semua relasi (quotation, shodan, pipeline, PO, visit) dipindah ke satu customer utama sebelum duplikat dihapus
+- **Standarisasi penamaan customer:** perusahaan wajib berformat baku dengan **"PT"** di depan (mis. `PT Maju Jaya`, bukan `Maju jaya` / `pt. maju jaya`); dukung juga badan usaha lain (CV, UD, Tbk) dengan aturan sama
+- **Normalisasi otomatis saat input baru:** form customer merapikan otomatis (kapitalisasi, prefix PT/CV) + **warning kalau nama mirip customer yang sudah ada** — mencegah duplikat baru
+- **Audit sekali jalan:** script/halaman admin untuk scan seluruh database existing, tampilkan daftar yang tidak sesuai standar & kandidat duplikat, eksekusi perbaikan massal setelah dikonfirmasi
+- Urutan: sebaiknya SEBELUM Fase 10 (customer per area) & Fase 12 (tab project), supaya fitur-fitur itu dibangun di atas data yang sudah bersih
+- *Open: aturan penulisan final ("PT" tanpa titik atau "PT."?); apakah customer perorangan (tanpa badan usaha) diperbolehkan?*
+
 ---
 
 ## Keputusan Tambahan (17 Jul 2026)
