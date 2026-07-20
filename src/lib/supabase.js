@@ -127,6 +127,14 @@ export async function deleteProjectMilestone(id) {
   const { error } = await supabase.from('project_milestones').delete().eq('id', id)
   if (error) throw error
 }
+// Semua milestone ringkas (untuk halaman Project di dashboard)
+export async function getAllMilestones() {
+  const { data, error } = await supabase.from('project_milestones')
+    .select('id, project_id, title, target_date, done, progress, sort').order('sort')
+  if (error) throw error
+  return data
+}
+
 // Milestone yang lewat deadline (belum done & target < hari ini) — untuk banner peringatan & reminder Fase 5
 export async function getOverdueMilestones() {
   const today = new Date().toISOString().slice(0, 10)

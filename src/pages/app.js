@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone, getOverdueMilestones } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone, getOverdueMilestones, getAllMilestones } from '../lib/supabase.js'
 import * as XLSX from 'xlsx'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
@@ -472,7 +472,15 @@ export async function renderApp(container, user, logout) {
 
   <!-- DASHBOARD -->
   <div id="p-dashboard" class="page on">
-    <div class="db-greet" id="db-greet"></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="db-greet" id="db-greet" style="flex:1;"></div>
+      <div style="display:flex;gap:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+        <button id="dash-pg1-btn" onclick="dashSwitchPage(1)" style="padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#002060;color:#fff;font-weight:600;">📊 Sales</button>
+        <button id="dash-pg2-btn" onclick="dashSwitchPage(2)" style="padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#fff;color:#64748b;">🏗 Project</button>
+      </div>
+    </div>
+    <div id="dash-page2" style="display:none;"></div>
+    <div id="dash-page1">
     <div class="sg" id="dash-stats"></div>
 
     <!-- Grafik penjualan (PO) -->
@@ -529,6 +537,7 @@ export async function renderApp(container, user, logout) {
       <div class="chd">Penawaran Terbaru</div>
       <div id="dash-recent"></div>
     </div>
+    </div><!-- /dash-page1 -->
   </div>
 
   <!-- QUOTATION -->
@@ -1220,6 +1229,7 @@ export async function renderApp(container, user, logout) {
     pickImportBom, confirmImportBom, cancelImportBom, bomImpToggle, exportBomXlsx,
     addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
     genStandardTimeline, updMilestoneProgress, updMilestoneDate, updMilestoneDuration, autoScheduleTimeline, exportTimelineXlsx,
+    dashSwitchPage, renderDashProjects,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -3303,6 +3313,71 @@ async function addPrjUpdateRow(pid) {
     updPhotoFile = null
     renderPrjList(); toast('Update terkirim ✓')
   } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+// ── Dashboard halaman 2: Progress Project (semua role) ──
+let dashPage = 1
+function dashSwitchPage(n) {
+  dashPage = n
+  const p1 = document.getElementById('dash-page1'), p2 = document.getElementById('dash-page2')
+  const b1 = document.getElementById('dash-pg1-btn'), b2 = document.getElementById('dash-pg2-btn')
+  if (p1) p1.style.display = n === 1 ? '' : 'none'
+  if (p2) p2.style.display = n === 2 ? '' : 'none'
+  const on = 'padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#002060;color:#fff;font-weight:600;'
+  const off = 'padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#fff;color:#64748b;'
+  if (b1) b1.style.cssText = n === 1 ? on : off
+  if (b2) b2.style.cssText = n === 2 ? on : off
+  if (n === 2) renderDashProjects()
+}
+async function renderDashProjects() {
+  const el = document.getElementById('dash-page2'); if (!el) return
+  el.innerHTML = '<div class="empty">Memuat progress project…</div>'
+  let allMs = []
+  try { allMs = await getAllMilestones() } catch (e) { console.error(e) }
+  const today = new Date().toISOString().slice(0, 10)
+  const active = projects.filter(p => p.stage !== 'Selesai' && p.stage !== 'Batal')
+  const msOf = pid => allMs.filter(m => m.project_id === pid)
+  const progOf = ms => ms.length ? Math.round(ms.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / ms.length) : null
+  el.innerHTML = `
+    <div class="sg">
+      <div class="sc"><div class="sn">${active.length}</div><div class="sl">Project aktif</div></div>
+      <div class="sc"><div class="sn">${projects.filter(p => p.stage === 'Instalasi').length}</div><div class="sl">Sedang instalasi</div></div>
+      <div class="sc"><div class="sn" style="color:${overdueMs.length ? '#dc2626' : '#002060'};">${overdueMs.length}</div><div class="sl">Tahapan telat</div></div>
+      <div class="sc"><div class="sn">${projects.filter(p => p.stage === 'Selesai').length}</div><div class="sl">Project selesai</div></div>
+    </div>
+    ${overdueMs.length ? `<div class="card" style="border-left:4px solid #dc2626;">
+      <div class="chd" style="color:#dc2626;">⏰ Tahapan Lewat Deadline (${overdueMs.length})</div>
+      ${overdueMs.slice(0, 8).map(m => {
+        const days = Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000)
+        return `<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f1f5f9;">
+          <b>${m.projects.name}</b> — ${m.title} <span style="color:#dc2626;font-weight:700;">telat ${days} hari</span>
+        </div>`
+      }).join('')}
+    </div>` : ''}
+    <div class="card">
+      <div class="chd">🏗 Progress Project Aktif</div>
+      ${active.length ? active.map(p => {
+        const ms = msOf(p.id)
+        const prog = progOf(ms)
+        const next = ms.filter(m => !m.done).sort((a, b) => (a.sort || 99) - (b.sort || 99))[0]
+        const overdue = p.due_date && p.due_date < today
+        return `<div style="padding:9px 0;border-bottom:1px solid #f1f5f9;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <b style="font-size:12.5px;">${p.name}</b> ${prjStageBadge(p.stage)}
+            <span style="font-size:11px;color:#64748b;">${p.customer_name || ''}</span>
+            <span style="flex:1;"></span>
+            ${p.due_date ? `<span style="font-size:10px;color:${overdue ? '#dc2626' : '#94a3b8'};font-weight:${overdue ? '700' : '400'};">${overdue ? '⚠ ' : ''}target ${fmtD(p.due_date)}</span>` : ''}
+            <button class="bxs" onclick="nav('project');setTimeout(()=>togglePrjDetail('${p.id}'),50)">Buka</button>
+          </div>
+          ${prog !== null ? `<div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
+            <div class="bar-track" style="flex:1;max-width:340px;"><div style="position:absolute;left:0;top:0;bottom:0;width:${prog}%;background:${prog >= 100 ? '#16a34a' : '#002060'};border-radius:9px;"></div></div>
+            <b style="font-size:11px;color:#002060;">${prog}%</b>
+            ${next ? `<span style="font-size:10px;color:#64748b;">▸ ${next.sort ? next.sort + '. ' : ''}${next.title}${next.target_date ? ' (target ' + fmtD(next.target_date) + ')' : ''}</span>` : ''}
+          </div>` : '<div style="font-size:10px;color:#94a3b8;margin-top:4px;">Belum ada timeline — buka project untuk membuat.</div>'}
+          ${prjStepper(p)}
+        </div>`
+      }).join('') : '<div class="empty">Belum ada project aktif.</div>'}
+    </div>`
 }
 
 // ── FASE 12: Dashboard khusus ENGINEER (tanpa nilai uang) ──
