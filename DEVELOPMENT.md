@@ -97,16 +97,24 @@ Semua jalan di sisi browser (SheetJS), tanpa server tambahan.
 - Validasi saat import: kolom wajib, format angka, duplikat; baris bermasalah ditampilkan di preview, tidak langsung merusak data
 - *Open: tab mana saja yang dapat tombol export; format xlsx saja atau plus CSV*
 
-## FASE 12 — Tab Project (ditambahkan 20 Jul 2026)
-Tab baru yang menggabungkan seluruh siklus project dalam satu tempat. Cakupan (hasil klarifikasi Julius, 20 Jul 2026) — keempatnya masuk:
+## FASE 12 — Tab Project (ditambahkan 20 Jul 2026, diperkaya hasil meeting 20 Jul)
+Tab baru yang menggabungkan seluruh siklus project dalam satu tempat.
 
-- **Tracking project berjalan:** satu project meng-link quotation, PO, dan progress-nya (inquiry → penawaran → PO → delivery → selesai); status per tahap terlihat jelas
-- **Project engineering/instalasi:** timeline instalasi/commissioning di customer, status pengerjaan oleh engineer, dokumentasi foto (upload ke Supabase Storage)
-- **Manajemen tugas internal:** task per project — siapa mengerjakan apa, deadline, status (semacam task board sederhana)
-- **Dokumen per project:** kumpulan file (quotation, PO, drawing, foto) dikelompokkan per project, tersimpan di Supabase Storage
-- **Permission:** mengikuti aturan Fase 1 — engineer bisa lihat project & task tapi nilai harga disembunyikan; sales lihat project miliknya
+- **Tracking project berjalan:** satu project meng-link quotation, PO, dan progress-nya; tahapan status: **Inquiry → Penawaran → PO → Pengadaan → Delivery → Instalasi/Commissioning → Selesai** (+ status Batal)
+- **Komponen per project** (hasil meeting 20 Jul):
+  - **BOM list** — daftar bill of material per project (part, qty, status pengadaan)
+  - **Design** — file drawing/desain (upload ke Supabase Storage)
+  - **Report** — laporan progress/hasil pekerjaan
+  - **Timeline** — jadwal & milestone project (instalasi/commissioning termasuk di sini)
+- **Project engineering/instalasi:** status pengerjaan oleh engineer, dokumentasi foto (upload ke Supabase Storage)
+- **Manajemen tugas internal:** task per project — siapa mengerjakan apa, deadline, status (task board sederhana)
+- **Dokumen per project:** kumpulan file (quotation, PO, drawing, foto) dikelompokkan per project
+- **Dashboard khusus engineer** (hasil meeting 20 Jul — konsep awal dari Claude, boleh direvisi):
+  - Saat engineer login, dashboard-nya BERBEDA: fokus progress project, tanpa nilai uang sama sekali
+  - Isi: (a) list project aktif yang melibatkan dia + tahap sekarang, (b) task miliknya yang belum selesai + deadline (yang overdue disorot), (c) timeline/jadwal instalasi minggu berjalan, (d) tombol cepat "Update Progress" → isi status + upload foto dari HP, (e) riwayat update terakhir per project
+  - Progress yang diupdate engineer otomatis tampil di tab Project (dilihat admin/sales/direktur)
+- **Permission:** dibuat hanya oleh **admin & super admin**; engineer lihat project & task tanpa nilai harga; sales lihat project miliknya
 - Saran urutan pengerjaan: setelah Fase 9 (biar bisa link ke stock/delivery), atau paralel karena strukturnya modul baru
-- *Open: tahapan status project final (nama & urutannya); siapa boleh buat project (admin saja atau sales juga)*
 
 ## FASE 13 — Pembersihan & Standarisasi Database Customer (ditambahkan 20 Jul 2026)
 Data hygiene: hapus duplikat + standar penamaan, supaya pipeline/dashboard/report akurat.
@@ -119,6 +127,15 @@ Data hygiene: hapus duplikat + standar penamaan, supaya pipeline/dashboard/repor
 - *Open: aturan penulisan final ("PT" tanpa titik atau "PT."?); apakah customer perorangan (tanpa badan usaha) diperbolehkan?*
 
 ---
+
+## FASE 14 — Permission & Attachment Upgrade (hasil meeting 20 Jul 2026)
+Penyesuaian pada fitur yang sudah jadi (quotation Fase 2, PO Fase 6) — bisa dikerjakan cepat, tidak tergantung fase lain.
+
+- **Quotation — created by mengikuti akun:** pembuat quotation otomatis tercatat dari akun yang login (bukan dipilih manual); inisial di nomor quotation ikut akun pembuat
+- **Visibility PO:** admin & super admin lihat **semua** PO; **sales hanya lihat PO miliknya sendiri**
+- **Attach dokumen di tab PO:** upload file (PDF PO customer, dsb.) per PO ke Supabase Storage, bisa multi-file
+- **Attach dokumen di Data Barang Trading:** upload file (datasheet, sertifikat, dsb.) per barang trading
+- *Open: apakah visibility quotation juga dibatasi seperti PO (sales hanya lihat miliknya)?*
 
 ## Keputusan Tambahan (17 Jul 2026)
 1. ✅ Direktur = **super_admin**. Akun Julius juga **super_admin** (developer)
