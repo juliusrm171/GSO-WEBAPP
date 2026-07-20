@@ -46,6 +46,26 @@ export async function getCustomers() {
   return data
 }
 
+// FASE 14: upload lampiran ke Supabase Storage (bucket 'attachments') → balikin URL publik
+export async function uploadAttachment(file, folder) {
+  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = `${folder}/${Date.now()}_${safe}`
+  const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+  if (error) throw error
+  const { data } = supabase.storage.from('attachments').getPublicUrl(path)
+  return { name: file.name, url: data.publicUrl, path }
+}
+export async function updatePOFields(id, fields) {
+  const { data, error } = await supabase.from('purchase_orders').update(fields).eq('id', id).select('*, profiles!purchase_orders_sales_id_fkey(name)').single()
+  if (error) throw error
+  return data
+}
+export async function updateProductFields(id, fields) {
+  const { data, error } = await supabase.from('products').update(fields).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
 // FASE 13: update sebagian kolom customer (tanpa menyentuh kolom lain)
 export async function updateCustomerFields(id, fields) {
   const { data, error } = await supabase.from('customers').update(fields).eq('id', id).select().single()

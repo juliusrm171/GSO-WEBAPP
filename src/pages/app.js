@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields } from '../lib/supabase.js'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
 
@@ -1119,7 +1119,7 @@ export async function renderApp(container, user, logout) {
     showCtDrop, hideCtDrop, pickCt, showVCtDrop, hideVCtDrop, pickVCt,
     partSearch, hidePartDrop, pickPart,
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
-    renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup, setCustAreaFilter,
+    renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup, setCustAreaFilter, pickAttach,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -1167,6 +1167,16 @@ function applyRoleUI() {
   }
   // FASE 13: tab Rapikan Data khusus admin
   const dtClean = document.getElementById('dt-clean'); if (dtClean) dtClean.style.display = isAdmin() ? '' : 'none'
+
+  // FASE 14: created-by quotation ikut akun login — nama sales terisi dari profil dan dikunci untuk role sales
+  const fs = document.getElementById('f-sales')
+  if (fs) {
+    if (myProfile?.name) fs.value = myProfile.name
+    fs.readOnly = myRole === 'sales'
+    if (fs.readOnly) { fs.style.background = '#f8fafc'; fs.title = 'Nama sales otomatis mengikuti akun login' }
+  }
+  // FASE 14: sales hanya lihat PO miliknya — sembunyikan filter "Semua Sales"
+  const pofs = document.getElementById('po-f-sales'); if (pofs) pofs.style.display = myRole === 'sales' ? 'none' : ''
 }
 
 // ── PROFILE ──
@@ -1981,12 +1991,14 @@ function renderPO() {
 
   const month = mEl?.value || curMonth()
   const sf = fSel?.value || 'all'
-  const filtered = pos.filter(p => (p.po_date || '').startsWith(month) && (sf === 'all' || poSalesName(p) === sf))
+  // FASE 14: role sales hanya melihat PO miliknya sendiri
+  const visiblePos = myRole === 'sales' ? pos.filter(p => p.sales_id === currentUser?.id) : pos
+  const filtered = visiblePos.filter(p => (p.po_date || '').startsWith(month) && (sf === 'all' || poSalesName(p) === sf))
 
   // Stats: bulan terpilih + tahun berjalan
   const year = month.slice(0, 4)
   const mTot = filtered.reduce((s, p) => s + (+p.amount || 0), 0)
-  const yPos = pos.filter(p => (p.po_date || '').startsWith(year))
+  const yPos = visiblePos.filter(p => (p.po_date || '').startsWith(year))
   const yTot = yPos.reduce((s, p) => s + (+p.amount || 0), 0)
   const st = document.getElementById('po-stats')
   if (st) st.innerHTML = `
@@ -2002,7 +2014,11 @@ function renderPO() {
       <td style="font-size:11px;color:#64748b;">${poSalesName(p)}</td>
       <td style="text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmt(+p.amount || 0)}</td>
       <td style="font-size:10px;color:#64748b;">${quo ? quo.qo_number : '-'}</td>
-      <td>${isAdmin() ? `<button class="bdel" onclick="delPO('${p.id}')">🗑</button>` : ''}</td>
+      <td style="white-space:nowrap;">
+        ${attLinks(p.attachments)}
+        ${isAdmin() ? `<button class="bxs" title="Attach dokumen (PDF PO, dll)" onclick="pickAttach('po','${p.id}')">📎</button>
+        <button class="bdel" onclick="delPO('${p.id}')">🗑</button>` : ''}
+      </td>
     </tr>`
   }).join('') || `<tr><td colspan="7" class="empty">Belum ada PO di bulan ini.</td></tr>`
   const ct = document.getElementById('po-ct')
@@ -2087,6 +2103,48 @@ function renderTargets() {
       </div>
     </div>`
   }).join('') || '<div class="empty">Belum ada data sales.</div>'
+}
+
+// ── FASE 14: Attachment dokumen (PO & Data Barang Trading) ──
+function attLinks(atts, small) {
+  const list = Array.isArray(atts) ? atts : []
+  if (!list.length) return ''
+  return `<span style="display:inline-flex;gap:5px;flex-wrap:wrap;${small ? 'margin-top:2px;' : 'margin-right:5px;'}">` +
+    list.map(a => `<a href="${a.url}" target="_blank" style="font-size:10px;color:#1d4ed8;text-decoration:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:5px;padding:1px 6px;">📄 ${(a.name || 'file').slice(0, 22)}</a>`).join('') + '</span>'
+}
+function pickAttach(kind, id) {
+  if (!guardAdmin()) return
+  let inp = document.getElementById('attach-file-input')
+  if (!inp) {
+    inp = document.createElement('input')
+    inp.type = 'file'; inp.id = 'attach-file-input'; inp.style.display = 'none'
+    inp.accept = '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip'
+    document.body.appendChild(inp)
+  }
+  inp.onchange = async () => {
+    const file = inp.files[0]; inp.value = ''
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) { toast('Maksimal 10 MB', false); return }
+    toast('Meng-upload ' + file.name + '…')
+    try {
+      const att = await uploadAttachment(file, kind === 'po' ? 'po' : 'products')
+      if (kind === 'po') {
+        const p = pos.find(x => x.id === id); if (!p) return
+        const atts = [...(Array.isArray(p.attachments) ? p.attachments : []), att]
+        const u = await updatePOFields(id, { attachments: atts })
+        const i = pos.findIndex(x => x.id === id); if (i >= 0) pos[i] = u
+        renderPO()
+      } else {
+        const p = products.find(x => x.id === id); if (!p) return
+        const atts = [...(Array.isArray(p.attachments) ? p.attachments : []), att]
+        const u = await updateProductFields(id, { attachments: atts })
+        const i = products.findIndex(x => x.id === id); if (i >= 0) products[i] = u
+        renderProdList(document.querySelector('#db-product-panel input')?.value || '')
+      }
+      toast('Dokumen terlampir ✓')
+    } catch (e) { toast('Gagal upload: ' + e.message, false) }
+  }
+  inp.click()
 }
 
 async function saveTargetVal(salesId, period, val) {
@@ -3105,10 +3163,11 @@ function renderProdList(q) {
     if (editingProdId === p.id) return renderProdEditRow(p)
     return `
     <div class="dbi">
-      <div><div class="dn">${p.name}</div><div class="dm">${fmtPL(p.price || 0)} / ${p.unit || 'unit'} · ${p.category || ''}</div></div>
+      <div><div class="dn">${p.name}</div><div class="dm">${fmtPL(p.price || 0)} / ${p.unit || 'unit'} · ${p.category || ''}</div>${attLinks(p.attachments, true)}</div>
       <div style="display:flex;gap:4px;">
         ${canQuote() ? `<button class="bxs" onclick="aItem('${p.name.replace(/'/g, "\\'")}','${(p.part || '').replace(/'/g, "\\'")}',1,'${p.unit || 'unit'}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button>` : ''}
-        ${isAdmin() ? `<button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditProd('${p.id}')">✏️ Edit</button>
+        ${isAdmin() ? `<button class="bxs" title="Attach dokumen (datasheet, sertifikat)" onclick="pickAttach('prod','${p.id}')">📎</button>
+        <button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditProd('${p.id}')">✏️ Edit</button>
         <button class="bdel" onclick="delProd('${p.id}')">🗑</button>` : ''}
       </div>
     </div>`
