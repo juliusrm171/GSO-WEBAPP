@@ -2905,37 +2905,116 @@ async function updMilestoneDuration(id, val) {
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
-// Export timeline ke Excel (rapi untuk dikirim ke customer — tanpa data harga)
-function exportTimelineXlsx(pid) {
+// Export timeline sebagai GANTT CHART berwarna (mirip format OMEGA) — untuk dikirim ke customer, tanpa harga.
+// Pakai ExcelJS (dynamic import) supaya sel bisa diwarnai; tak membebani load awal.
+async function exportTimelineXlsx(pid) {
   if (!guardAdmin()) return
   const p = projects.find(x => x.id === pid); if (!p) return
   const ms = (prjChildren && expandedPrjId === pid ? prjChildren.milestones : []).slice().sort((a, b) => (a.sort || 99) - (b.sort || 99))
   if (!ms.length) { toast('Timeline masih kosong', false); return }
-  const today = new Date().toISOString().slice(0, 10)
-  const statusOf = m => m.done ? ('SELESAI' + (m.done_date ? ' (' + m.done_date + ')' : ''))
-    : (m.target_date && m.target_date < today ? 'TELAT ' + Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000) + ' HARI'
-    : (+m.progress > 0 ? 'ON PROGRESS' : 'BELUM MULAI'))
-  const totProg = Math.round(ms.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / ms.length)
-  const aoa = [
-    ['TIMELINE PROJECT'],
-    ['PROJECT NAME', '', p.name],
-    ['CUSTOMER', '', p.customer_name || ''],
-    ['TANGGAL MULAI', '', p.start_date || ''],
-    ['TARGET SELESAI', '', p.due_date || ''],
-    ['PROGRESS KESELURUHAN', '', totProg + '%'],
-    [],
-    ['No', 'Tahapan', 'Durasi (hari)', 'Mulai', 'Target Selesai', 'Progress', 'Status'],
-    ...ms.map((m, i) => [
-      m.sort || i + 1, m.title, m.duration_days || '', m.start_date || '', m.target_date || '',
-      (m.done ? 100 : (+m.progress || 0)) + '%', statusOf(m)
-    ])
-  ]
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!cols'] = [{ wch: 4 }, { wch: 46 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 9 }, { wch: 22 }]
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Timeline')
-  XLSX.writeFile(wb, `Timeline ${(p.customer_name || '').replace(/[^\w ]/g, '')} ${p.name.replace(/[^\w ]/g, '')}.xlsx`.replace(/\s+/g, ' '))
-  toast('Timeline ter-export ✓')
+  toast('Menyiapkan Gantt chart…')
+  try {
+    const ExcelJS = (await import('exceljs')).default || (await import('exceljs'))
+    const dayMs = 86400000
+    const toDate = s => s ? new Date(s + 'T00:00:00') : null
+    const fmtISO = d => d.toISOString().slice(0, 10)
+    // Pastikan tiap tahap punya start & target: hitung berantai dari start project bila belum diisi
+    let cursor = toDate(p.start_date) || toDate(ms.find(m => m.start_date)?.start_date) || new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')
+    const bars = ms.map((m, i) => {
+      let start = toDate(m.start_date), end = toDate(m.target_date)
+      const dur = Math.max(1, +m.duration_days || (start && end ? Math.round((end - start) / dayMs) + 1 : 1))
+      if (!start) start = new Date(cursor)
+      if (!end) { end = new Date(start); end.setDate(end.getDate() + dur - 1) }
+      cursor = new Date(end); cursor.setDate(cursor.getDate() + 1)
+      return { m, no: m.sort || i + 1, start, end, dur }
+    })
+    const minD = new Date(Math.min(...bars.map(b => +b.start)))
+    const maxD = new Date(Math.max(...bars.map(b => +b.end)))
+    const totalDays = Math.round((maxD - minD) / dayMs) + 1
+    const days = Array.from({ length: totalDays }, (_, k) => { const d = new Date(minD); d.setDate(d.getDate() + k); return d })
+    const DOW = ['M', 'S', 'S', 'R', 'K', 'J', 'S'] // Minggu..Sabtu (id) — huruf pertama
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des']
+    const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')
+    const totProg = Math.round(ms.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / ms.length)
+
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Timeline', { views: [{ state: 'frozen', xSplit: 6, ySplit: 8 }] })
+    const FIXED = 6 // kolom info: No, Tahapan, Mulai, Selesai, Durasi, Progress
+    const navy = 'FF002060', green = 'FF16A34A', blue = 'FF2563EB', red = 'FFDC2626', gray = 'FFCBD5E1', amber = 'FFD97706'
+    const fill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } })
+    const border = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, left: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } }, right: { style: 'thin', color: { argb: 'FFE2E8F0' } } }
+
+    // Judul
+    ws.mergeCells(1, 1, 1, FIXED + Math.min(totalDays, 8))
+    const t = ws.getCell(1, 1); t.value = 'TIMELINE PROJECT — ' + p.name; t.font = { bold: true, size: 14, color: { argb: navy } }
+    const info = [['Customer', p.customer_name || '-'], ['Tanggal Mulai', fmtISO(minD)], ['Target Selesai', fmtISO(maxD)], ['Progress Keseluruhan', totProg + '%']]
+    info.forEach((row, i) => { ws.getCell(2 + i, 1).value = row[0]; ws.getCell(2 + i, 1).font = { bold: true, size: 10, color: { argb: 'FF64748B' } }; ws.getCell(2 + i, 3).value = row[1]; ws.getCell(2 + i, 3).font = { bold: true, size: 10 } })
+
+    // Baris skala tanggal (row 7 = bulan/tgl, row 8 = header kolom + hari)
+    const monRow = ws.getRow(7), headRow = ws.getRow(8)
+    const heads = ['No', 'Tahapan', 'Mulai', 'Selesai', 'Hari', 'Prog']
+    heads.forEach((h, c) => { const cell = headRow.getCell(c + 1); cell.value = h; cell.font = { bold: true, size: 9, color: { argb: 'FFFFFFFF' } }; cell.fill = fill(navy); cell.alignment = { horizontal: 'center', vertical: 'middle' }; cell.border = border })
+    days.forEach((d, k) => {
+      const col = FIXED + 1 + k
+      const mc = monRow.getCell(col)
+      // tampilkan bulan di tanggal 1 atau kolom pertama
+      if (k === 0 || d.getDate() === 1) { mc.value = MON[d.getMonth()]; mc.font = { bold: true, size: 8, color: { argb: navy } } }
+      const hc = headRow.getCell(col)
+      const weekend = d.getDay() === 0 || d.getDay() === 6
+      hc.value = d.getDate() + '\n' + DOW[d.getDay()]
+      hc.font = { size: 7, color: { argb: weekend ? 'FFDC2626' : 'FFFFFFFF' } }
+      hc.fill = fill(weekend ? 'FF334155' : navy)
+      hc.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+      hc.border = border
+      ws.getColumn(col).width = 3.2
+    })
+
+    // Baris tiap tahap
+    bars.forEach((b, r) => {
+      const row = ws.getRow(9 + r)
+      const late = !b.m.done && b.end < today
+      const barColor = b.m.done ? green : late ? red : (+b.m.progress > 0 ? blue : gray)
+      row.getCell(1).value = b.no
+      row.getCell(2).value = b.m.title
+      row.getCell(3).value = fmtISO(b.start)
+      row.getCell(4).value = fmtISO(b.end)
+      row.getCell(5).value = b.dur
+      row.getCell(6).value = (b.m.done ? 100 : (+b.m.progress || 0)) + '%'
+      for (let c = 1; c <= FIXED; c++) { const cell = row.getCell(c); cell.font = { size: 9 }; cell.alignment = { vertical: 'middle', horizontal: c === 2 ? 'left' : 'center' }; cell.border = border }
+      row.getCell(2).font = { size: 9, bold: true }
+      // Blok gantt
+      days.forEach((d, k) => {
+        const col = FIXED + 1 + k
+        const cell = row.getCell(col)
+        cell.border = border
+        const inBar = d >= b.start && d <= b.end
+        const weekend = d.getDay() === 0 || d.getDay() === 6
+        if (inBar) {
+          // porsi progress: warnai penuh kalau selesai; sebagian sesuai progress
+          cell.fill = fill(barColor)
+        } else if (weekend) {
+          cell.fill = fill('FFF1F5F9')
+        }
+        // garis "hari ini"
+        if (fmtISO(d) === fmtISO(today)) cell.border = { ...border, left: { style: 'medium', color: { argb: amber } }, right: { style: 'medium', color: { argb: amber } } }
+      })
+    })
+    ws.getColumn(1).width = 4; ws.getColumn(2).width = 42; ws.getColumn(3).width = 11; ws.getColumn(4).width = 11; ws.getColumn(5).width = 5; ws.getColumn(6).width = 6
+    ws.getRow(8).height = 22
+
+    // Legenda
+    const lr = 10 + bars.length
+    const legend = [['■ Selesai', green], ['■ Berjalan', blue], ['■ Telat', red], ['■ Belum mulai', gray]]
+    legend.forEach((l, i) => { const cell = ws.getCell(lr, 2 + i); cell.value = l[0]; cell.font = { size: 9, bold: true, color: { argb: l[1] } } })
+
+    const buf = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `Timeline ${(p.customer_name || '').replace(/[^\w ]/g, '')} ${p.name.replace(/[^\w ]/g, '')}.xlsx`.replace(/\s+/g, ' ')
+    a.click(); URL.revokeObjectURL(url)
+    toast('Gantt chart ter-export ✓')
+  } catch (e) { toast('Gagal export: ' + e.message, false); console.error(e) }
 }
 
 // Hitung deadline berantai: mulai dari start_date project (atau hari ini),
