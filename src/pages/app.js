@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone } from '../lib/supabase.js'
 import * as XLSX from 'xlsx'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
@@ -1216,7 +1216,8 @@ export async function renderApp(container, user, logout) {
     smPartChange, saveStockItemManual, updStockQty, renderStock, delStockItem, loadStock,
     pickImportStock, confirmImportStock, cancelImportStock, stockImpToggle, exportStockXlsx,
     togglePrjForm, savePrj, renderPrjList, togglePrjDetail, updPrjStage, delPrj, loadProjectsData,
-    addBomRow, updBomStatus, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
+    addBomRow, updBomStatusBarang, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
+    pickImportBom, confirmImportBom, cancelImportBom, bomImpToggle, exportBomXlsx,
     addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
@@ -2692,21 +2693,23 @@ function renderPrjDetail(p) {
       <button class="bxs" onclick="addMilestoneRow('${p.id}')">+ Milestone</button>
     </div>` : ''}
 
-    <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">📋 BOM LIST (${boms.length})</div>
-    ${boms.map(b => `
-      <div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;">
-        <div style="flex:1;"><b>${b.part_number || '-'}</b> ${b.description || ''} × ${+b.qty}</div>
-        ${isAdmin() ? `<select onchange="updBomStatus('${b.id}',this.value)" style="font-size:10px;padding:2px 5px;border:1px solid #e2e8f0;border-radius:5px;color:${BOM_ST[b.status][0]};">
-          ${Object.entries(BOM_ST).map(([v, [c, l]]) => `<option value="${v}"${b.status === v ? ' selected' : ''}>${l}</option>`).join('')}
-        </select>
-        <button class="bdel" style="font-size:10px;" onclick="delBom('${b.id}')">✕</button>` : `<span style="color:${BOM_ST[b.status][0]};font-weight:600;font-size:10px;">${BOM_ST[b.status][1]}</span>`}
-      </div>`).join('') || '<div style="font-size:11px;color:#94a3b8;">Belum ada item BOM.</div>'}
+    <div style="display:flex;align-items:center;gap:7px;margin:12px 0 5px;flex-wrap:wrap;">
+      <div style="font-size:11px;font-weight:700;color:#002060;flex:1;">📋 BOM LIST — Build of Material (${boms.length} item)</div>
+      ${isAdmin() ? `<button class="bxs" onclick="pickImportBom('${p.id}')" title="Upload file BOM .xlsx (format GSO)">📥 Import BOM</button>
+      <button class="bxs" onclick="exportBomXlsx('${p.id}')">⬇ Export BOM</button>` : ''}
+    </div>
+    <div id="bom-import-preview" style="display:none;margin-bottom:8px;"></div>
+    ${renderBomTable(boms)}
     ${isAdmin() ? `
     <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
-      <input id="bom-part" placeholder="Part number" style="flex:1;min-width:100px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
-      <input id="bom-desc" placeholder="Deskripsi" style="flex:2;min-width:120px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
-      <input id="bom-qty" type="number" value="1" min="1" style="width:60px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
-      <button class="bxs" onclick="addBomRow('${p.id}')">+ BOM</button>
+      <input id="bom-group" list="bom-group-dl" placeholder="Grup (mis. LIGHTING)" style="width:130px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+      <datalist id="bom-group-dl">${[...new Set(boms.map(b => b.group_name).filter(Boolean))].map(g => `<option value="${g}">`).join('')}</datalist>
+      <input id="bom-brand" placeholder="Brand" style="width:90px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+      <input id="bom-part" placeholder="Part number" style="flex:1;min-width:110px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+      <input id="bom-desc" placeholder="Part name" style="flex:2;min-width:120px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+      <input id="bom-qty" type="number" value="1" min="0" step="any" style="width:55px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;" title="Qty">
+      <input id="bom-price" type="number" placeholder="Harga" style="width:100px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+      <button class="bxs" onclick="addBomRow('${p.id}')">+ Item</button>
     </div>` : ''}
 
     <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">✅ TASKS (${tasks.filter(t => t.status === 'done').length}/${tasks.length})</div>
@@ -2858,21 +2861,208 @@ async function delPrj(id) {
     renderPrjList(); toast('Project dihapus')
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
+// BOM: tabel bergrup sesuai format Excel GSO (STATUS/BRAND/PN/NAME/QTY/harga — harga disembunyikan utk engineer)
+const BOM_STATUSES = ['', 'INDENT', 'READY', 'ON DELIVERY', 'TIBA']
+function renderBomTable(boms) {
+  if (!boms.length) return '<div style="font-size:11px;color:#94a3b8;">Belum ada item BOM. Tambah manual atau Import BOM dari Excel.</div>'
+  const showMoney = canQuote() // engineer tidak lihat harga
+  const groups = []
+  boms.forEach(b => {
+    const g = b.group_name || 'LAINNYA'
+    let grp = groups.find(x => x.name === g)
+    if (!grp) { grp = { name: g, items: [] }; groups.push(grp) }
+    grp.items.push(b)
+  })
+  const stColor = s => s === 'READY' || s === 'TIBA' ? '#16a34a' : s === 'INDENT' ? '#d97706' : s === 'ON DELIVERY' ? '#0891b2' : '#94a3b8'
+  const grand = boms.reduce((s, b) => s + (+b.total || (+b.price || 0) * (+b.qty || 0)), 0)
+  return `<div class="tblwrap" style="border:1px solid #e2e8f0;border-radius:8px;background:#fff;"><table class="piptbl" style="font-size:11px;">
+    <thead><tr><th>Status</th><th>Brand</th><th>Part Number</th><th>Part Name</th><th style="text-align:right;">Qty</th>${showMoney ? '<th style="text-align:right;">Harga</th><th style="text-align:right;">Total</th>' : ''}<th></th></tr></thead>
+    <tbody>
+    ${groups.map(g => `
+      <tr><td colspan="${showMoney ? 8 : 6}" style="background:#f1f5f9;font-weight:700;color:#002060;font-size:10.5px;">${g.name}${showMoney ? ` — ${fmt(g.items.reduce((s, b) => s + (+b.total || (+b.price || 0) * (+b.qty || 0)), 0))}` : ''}</td></tr>
+      ${g.items.map(b => `<tr>
+        <td>${isAdmin() ? `<select onchange="updBomStatusBarang('${b.id}',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;color:${stColor(b.status_barang)};font-weight:600;">
+          ${BOM_STATUSES.map(s => `<option value="${s}"${(b.status_barang || '') === s ? ' selected' : ''}>${s || '—'}</option>`).join('')}
+        </select>` : `<span style="color:${stColor(b.status_barang)};font-weight:600;font-size:10px;">${b.status_barang || '—'}</span>`}</td>
+        <td style="font-size:10px;color:#64748b;">${b.brand || ''}</td>
+        <td style="white-space:nowrap;font-weight:600;">${b.part_number || '-'}</td>
+        <td>${b.part_name || b.description || ''}${b.detail && /^https?:/.test(b.detail) ? ` <a href="${b.detail}" target="_blank" title="link detail">🔗</a>` : ''}</td>
+        <td style="text-align:right;">${+b.qty}</td>
+        ${showMoney ? `<td style="text-align:right;white-space:nowrap;">${b.price ? fmt(+b.price) : '-'}</td>
+        <td style="text-align:right;white-space:nowrap;font-weight:600;">${fmt(+b.total || (+b.price || 0) * (+b.qty || 0))}</td>` : ''}
+        <td>${isAdmin() ? `<button class="bdel" style="font-size:10px;" onclick="delBom('${b.id}')">✕</button>` : ''}</td>
+      </tr>`).join('')}`).join('')}
+    ${showMoney ? `<tr><td colspan="6" style="text-align:right;font-weight:700;">GRAND TOTAL</td><td style="text-align:right;font-weight:700;color:#002060;white-space:nowrap;">${fmt(grand)}</td><td></td></tr>` : ''}
+    </tbody></table></div>`
+}
 async function addBomRow(pid) {
-  const part = document.getElementById('bom-part')?.value.trim(), desc = document.getElementById('bom-desc')?.value.trim(), qty = +(document.getElementById('bom-qty')?.value || 1)
-  if (!part && !desc) { toast('Isi part number atau deskripsi', false); return }
+  const part = document.getElementById('bom-part')?.value.trim(), desc = document.getElementById('bom-desc')?.value.trim()
+  const qty = +(document.getElementById('bom-qty')?.value || 1), price = +(document.getElementById('bom-price')?.value || 0)
+  if (!part && !desc) { toast('Isi part number atau part name', false); return }
   try {
-    const b = await addProjectBom({ project_id: pid, part_number: part || null, description: desc || null, qty })
+    const b = await addProjectBom({
+      project_id: pid, part_number: part || null, part_name: desc || null, description: desc || null, qty,
+      group_name: document.getElementById('bom-group')?.value.trim() || null,
+      brand: document.getElementById('bom-brand')?.value.trim() || null,
+      price: price || null, total: price ? price * qty : null
+    })
     if (prjChildren) prjChildren.boms.push(b)
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
-async function updBomStatus(id, status) {
+async function updBomStatusBarang(id, status_barang) {
   try {
-    const b = await updateProjectBom(id, { status })
+    const b = await updateProjectBom(id, { status_barang: status_barang || null })
     if (prjChildren) { const i = prjChildren.boms.findIndex(x => x.id === id); if (i >= 0) prjChildren.boms[i] = b }
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+// Import BOM dari Excel format GSO (header: STATUS BARANG/BRAND/CATEGORY/PART/PART NUMBER/PART NAME/QTY/harga)
+let bomImportRows = [], bomImportPid = null
+function pickImportBom(pid) {
+  if (!guardAdmin()) return
+  bomImportPid = pid
+  let inp = document.getElementById('bom-import-input')
+  if (!inp) {
+    inp = document.createElement('input')
+    inp.type = 'file'; inp.id = 'bom-import-input'; inp.accept = '.xlsx,.xls'; inp.style.display = 'none'
+    document.body.appendChild(inp)
+  }
+  inp.onchange = async () => { const f = inp.files[0]; inp.value = ''; if (f) await parseBomFile(f) }
+  inp.click()
+}
+async function parseBomFile(file) {
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
+    const up = c => String(c || '').trim().toUpperCase()
+    const hi = raw.findIndex(r => (r || []).some(c => up(c) === 'PART NUMBER') && (r || []).some(c => up(c) === 'QTY'))
+    if (hi < 0) { toast('Format tidak dikenali — kolom "PART NUMBER" & "QTY" tidak ditemukan', false); return }
+    const head = raw[hi].map(up)
+    const col = (...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i } return -1 }
+    const iSt = col('STATUS BARANG') >= 0 ? col('STATUS BARANG') : 0
+    const iBrand = col('BRAND'), iCat = col('CATEGORY'), iPart = col('PART'), iPN = col('PART NUMBER'), iName = col('PART NAME')
+    const iQty = col('QTY', 'KUANTITAS'), iPrice = col('PRICE AFTER DISC', 'HARGA', 'PRICELIST'), iPL = col('PRICELIST'), iDisc = col('DISC'), iTot = col('TOTAL'), iDet = col('DETAIL')
+    bomImportRows = []
+    let curGroup = null
+    for (const r of raw.slice(hi + 1)) {
+      if (!r || !r.length) continue
+      const stCell = String(r[iSt] || '').trim()
+      const pn = String(r[iPN] || '').trim(), pname = String(r[iName] || '').trim(), brand = iBrand >= 0 ? String(r[iBrand] || '').trim() : ''
+      const qty = +(r[iQty] || 0), price = iPrice >= 0 ? +(r[iPrice] || 0) : 0
+      // Baris grup: hanya kolom pertama terisi
+      if (stCell && !pn && !pname && !brand && !qty && !price) { curGroup = stCell; continue }
+      // Baris item: minimal ada PN / nama / brand / harga
+      if (!pn && !pname && !brand && !price) continue
+      const total = iTot >= 0 && r[iTot] !== undefined && r[iTot] !== '' ? +r[iTot] : (price * qty)
+      bomImportRows.push({
+        group_name: curGroup, status_barang: stCell ? stCell.toUpperCase().trim() : null,
+        brand: brand || null, category: iCat >= 0 ? (String(r[iCat] || '').trim() || null) : null,
+        part: iPart >= 0 ? (String(r[iPart] || '').trim() || null) : null,
+        part_number: pn || null, part_name: pname || null,
+        qty: qty || 0, price: price || null,
+        disc: iDisc >= 0 ? (+(r[iDisc] || 0) || null) : null,
+        total: total || null,
+        detail: iDet >= 0 ? (String(r[iDet] || '').trim() || null) : null,
+        include: true
+      })
+    }
+    renderBomImportPreview()
+  } catch (e) { toast('Gagal baca file: ' + e.message, false) }
+}
+function bomImpToggle(i, on) { if (bomImportRows[i]) bomImportRows[i].include = on }
+function cancelImportBom() { bomImportRows = []; const el = document.getElementById('bom-import-preview'); if (el) { el.style.display = 'none'; el.innerHTML = '' } }
+function renderBomImportPreview() {
+  const el = document.getElementById('bom-import-preview'); if (!el) return
+  el.style.display = ''
+  if (!bomImportRows.length) { el.innerHTML = '<div class="empty">Tidak ada item BOM terbaca di file.</div>'; return }
+  const tot = bomImportRows.reduce((s, r) => s + (+r.total || 0), 0)
+  el.innerHTML = `
+    <div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:9px;padding:10px 12px;">
+      <div style="font-size:12px;font-weight:600;color:#1e40af;margin-bottom:6px;">📥 Preview Import BOM — ${bomImportRows.length} item · total ${fmt(tot)}</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:8px;cursor:pointer;">
+        <input type="checkbox" id="bom-imp-replace" checked> Hapus BOM lama project ini dulu (ganti total dengan isi file)
+      </label>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button class="bp" style="padding:5px 12px;font-size:11px;" id="btn-confirm-bom-imp" onclick="confirmImportBom()">✅ Import yang Dicentang</button>
+        <button class="bs" style="padding:5px 10px;font-size:11px;" onclick="cancelImportBom()">Batal</button>
+      </div>
+      <div style="max-height:240px;overflow:auto;border:1px solid #dbeafe;border-radius:7px;background:#fff;">
+        <table class="piptbl" style="font-size:10.5px;">
+          <thead><tr><th></th><th>Grup</th><th>Status</th><th>Brand</th><th>Part Number</th><th>Part Name</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Harga</th><th style="text-align:right;">Total</th></tr></thead>
+          <tbody>${bomImportRows.map((r, i) => `<tr>
+            <td><input type="checkbox"${r.include ? ' checked' : ''} onchange="bomImpToggle(${i},this.checked)"></td>
+            <td style="font-size:9.5px;color:#64748b;">${r.group_name || ''}</td>
+            <td style="font-size:9.5px;">${r.status_barang || ''}</td>
+            <td style="font-size:9.5px;">${r.brand || ''}</td>
+            <td style="white-space:nowrap;">${r.part_number || '-'}</td><td>${r.part_name || ''}</td>
+            <td style="text-align:right;">${r.qty}</td>
+            <td style="text-align:right;white-space:nowrap;">${r.price ? fmt(r.price) : '-'}</td>
+            <td style="text-align:right;white-space:nowrap;">${r.total ? fmt(r.total) : '-'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`
+}
+async function confirmImportBom() {
+  if (!guardAdmin()) return
+  const chosen = bomImportRows.filter(r => r.include)
+  if (!chosen.length) { toast('Tidak ada baris dicentang', false); return }
+  const btn = document.getElementById('btn-confirm-bom-imp')
+  if (btn) { btn.disabled = true; btn.textContent = 'Mengimport…' }
+  try {
+    if (document.getElementById('bom-imp-replace')?.checked) {
+      await deleteProjectBomsFor(bomImportPid)
+      if (prjChildren) prjChildren.boms = []
+    }
+    let ok = 0, fail = 0
+    for (const r of chosen) {
+      try {
+        const { include, ...row } = r
+        const b = await addProjectBom({ project_id: bomImportPid, description: r.part_name, ...row })
+        if (prjChildren && expandedPrjId === bomImportPid) prjChildren.boms.push(b)
+        ok++
+        if (btn && ok % 25 === 0) btn.textContent = `Mengimport… ${ok}/${chosen.length}`
+      } catch (e) { fail++; console.error(r.part_number, e) }
+    }
+    cancelImportBom(); renderPrjList()
+    toast(`Import BOM selesai: ${ok} item${fail ? `, ${fail} gagal` : ''}`)
+  } catch (e) { toast('Gagal: ' + e.message, false); if (btn) { btn.disabled = false; btn.textContent = '✅ Import yang Dicentang' } }
+}
+function exportBomXlsx(pid) {
+  if (!guardAdmin()) return
+  const p = projects.find(x => x.id === pid); if (!p) return
+  const boms = (prjChildren && expandedPrjId === pid) ? prjChildren.boms : []
+  if (!boms.length) { toast('BOM masih kosong', false); return }
+  const po = p.po_id ? pos.find(x => x.id === p.po_id) : null
+  const aoa = [
+    ['BOMLIST PROJECT'],
+    ['PROJECT NAME', '', p.name],
+    ['CUSTOMER NAME', '', p.customer_name || ''],
+    ['PO NUMBER', '', po ? po.po_number : ''],
+    ['STATUS PROJECT', '', p.stage],
+    ['TARGET SELESAI', '', p.due_date || ''],
+    [],
+    ['STATUS BARANG', 'BRAND', 'CATEGORY', 'PART', 'PART NUMBER', 'PART NAME', 'QTY', 'HARGA', 'TOTAL', 'DETAIL']
+  ]
+  const groups = [...new Set(boms.map(b => b.group_name || 'LAINNYA'))]
+  let grand = 0
+  for (const g of groups) {
+    aoa.push([g])
+    for (const b of boms.filter(x => (x.group_name || 'LAINNYA') === g)) {
+      const total = +b.total || (+b.price || 0) * (+b.qty || 0); grand += total
+      aoa.push([b.status_barang || '', b.brand || '', b.category || '', b.part || '', b.part_number || '', b.part_name || b.description || '', +b.qty || 0, +b.price || '', total || '', b.detail || ''])
+    }
+  }
+  aoa.push([]); aoa.push(['', '', '', '', '', 'GRAND TOTAL', '', '', grand])
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!cols'] = [{ wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 24 }, { wch: 36 }, { wch: 6 }, { wch: 13 }, { wch: 14 }, { wch: 30 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Bomlist')
+  XLSX.writeFile(wb, `Bomlist ${(p.customer_name || '').replace(/[^\w ]/g, '')} ${p.name.replace(/[^\w ]/g, '')}.xlsx`.replace(/\s+/g, ' '))
+  toast('BOM ter-export ✓')
 }
 async function delBom(id) {
   try {

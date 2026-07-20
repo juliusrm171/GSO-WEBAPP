@@ -155,6 +155,10 @@ export async function deleteProjectBom(id) {
   const { error } = await supabase.from('project_boms').delete().eq('id', id)
   if (error) throw error
 }
+export async function deleteProjectBomsFor(projectId) {
+  const { error } = await supabase.from('project_boms').delete().eq('project_id', projectId)
+  if (error) throw error
+}
 export async function addProjectFile(row) {
   const session = await getSession()
   const { data, error } = await supabase.from('project_files').insert({ ...row, uploaded_by: session.user.id }).select('*, profiles(name)').single()
