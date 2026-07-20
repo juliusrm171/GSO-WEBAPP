@@ -108,7 +108,7 @@ export async function getProjectChildren(pid) {
     supabase.from('project_boms').select('*').eq('project_id', pid).order('created_at'),
     supabase.from('project_files').select('*, profiles(name)').eq('project_id', pid).order('created_at', { ascending: false }),
     supabase.from('project_updates').select('*, profiles(name)').eq('project_id', pid).order('created_at', { ascending: false }),
-    supabase.from('project_milestones').select('*').eq('project_id', pid).order('target_date', { ascending: true, nullsFirst: false }),
+    supabase.from('project_milestones').select('*').eq('project_id', pid).order('sort', { ascending: true }).order('target_date', { ascending: true, nullsFirst: false }),
   ])
   for (const r of [t, b, f, u, m]) if (r.error) throw r.error
   return { tasks: t.data, boms: b.data, files: f.data, updates: u.data, milestones: m.data }

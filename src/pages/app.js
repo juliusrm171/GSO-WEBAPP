@@ -1219,6 +1219,7 @@ export async function renderApp(container, user, logout) {
     addBomRow, updBomStatusBarang, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
     pickImportBom, confirmImportBom, cancelImportBom, bomImpToggle, exportBomXlsx,
     addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
+    genStandardTimeline, updMilestoneProgress, updMilestoneDate,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -2675,22 +2676,39 @@ function renderPrjDetail(p) {
       ${quo ? `📄 ${quo.qo_number}` : ''} ${po ? ` · 🧾 ${po.po_number}` : ''} ${p.start_date ? ` · mulai ${fmtD(p.start_date)}` : ''}${p.due_date ? ` · target selesai <b style="color:${p.due_date < today && p.stage !== 'Selesai' ? '#dc2626' : '#002060'};">${fmtD(p.due_date)}</b>` : ''}
     </div>
 
-    <div style="font-size:11px;font-weight:700;color:#002060;margin:0 0 5px;">📅 TIMELINE PROJECT (${milestones.filter(m => m.done).length}/${milestones.length} milestone)</div>
+    ${(() => {
+      const totProg = milestones.length ? Math.round(milestones.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / milestones.length) : 0
+      return `<div style="display:flex;align-items:center;gap:8px;margin:0 0 5px;flex-wrap:wrap;">
+      <div style="font-size:11px;font-weight:700;color:#002060;">📅 TIMELINE PROJECT (${milestones.filter(m => m.done).length}/${milestones.length} tahap selesai)</div>
+      ${milestones.length ? `<div style="flex:1;min-width:120px;max-width:260px;display:flex;align-items:center;gap:6px;">
+        <div class="bar-track" style="flex:1;"><div style="position:absolute;left:0;top:0;bottom:0;width:${totProg}%;background:${totProg >= 100 ? '#16a34a' : '#002060'};border-radius:9px;"></div></div>
+        <b style="font-size:11px;color:${totProg >= 100 ? '#16a34a' : '#002060'};">${totProg}%</b>
+      </div>` : ''}
+      ${isAdmin() && !milestones.length ? `<button class="bxs" style="border-color:#002060;color:#002060;font-weight:600;" onclick="genStandardTimeline('${p.id}')">⚡ Buat Timeline Standar (12 tahap)</button>` : ''}
+    </div>`
+    })()}
     ${milestones.map(m => {
       const late = !m.done && m.target_date && m.target_date < today
-      return `<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;">
+      const prog = m.done ? 100 : (+m.progress || 0)
+      return `<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;flex-wrap:wrap;">
         <input type="checkbox"${m.done ? ' checked' : ''} onchange="toggleMilestone('${m.id}',this.checked)">
-        <div style="flex:1;${m.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${m.title}</div>
-        ${m.target_date ? `<span style="font-size:10px;font-weight:${late ? '700' : '500'};color:${m.done ? '#16a34a' : late ? '#dc2626' : '#64748b'};">${late ? '⚠ TELAT · ' : ''}target ${fmtD(m.target_date)}</span>` : ''}
+        <div style="flex:1;min-width:130px;${m.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${m.sort ? m.sort + '. ' : ''}${m.title}</div>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <div class="bar-track" style="width:70px;"><div style="position:absolute;left:0;top:0;bottom:0;width:${prog}%;background:${prog >= 100 ? '#16a34a' : late ? '#dc2626' : '#3b82f6'};border-radius:9px;"></div></div>
+          <input type="number" value="${prog}" min="0" max="100" onchange="updMilestoneProgress('${m.id}',this.value)" style="width:46px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;"${m.done ? ' disabled' : ''}>%
+        </div>
+        ${isAdmin() ? `<input type="date" value="${m.target_date || ''}" onchange="updMilestoneDate('${m.id}',this.value)" title="Target tanggal" style="padding:2px 5px;border:1px solid ${late ? '#fca5a5' : '#e2e8f0'};border-radius:5px;font-size:10px;background:${late ? '#fef2f2' : '#fff'};">`
+        : (m.target_date ? `<span style="font-size:10px;font-weight:${late ? '700' : '500'};color:${m.done ? '#16a34a' : late ? '#dc2626' : '#64748b'};">${late ? '⚠ TELAT · ' : ''}${fmtD(m.target_date)}</span>` : '')}
         ${m.done && m.done_date ? `<span style="font-size:10px;color:#16a34a;">✓ ${fmtD(m.done_date)}</span>` : ''}
         ${isAdmin() ? `<button class="bdel" style="font-size:10px;" onclick="delMilestone('${m.id}')">✕</button>` : ''}
       </div>`
-    }).join('') || '<div style="font-size:11px;color:#94a3b8;">Belum ada milestone. Tambahkan jadwal supaya timeline project terjaga.</div>'}
+    }).join('') || '<div style="font-size:11px;color:#94a3b8;">Belum ada milestone. Klik "Buat Timeline Standar" untuk mengisi 12 tahapan baku GSO, atau tambah manual di bawah.</div>'}
     ${isAdmin() ? `
     <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">
-      <input id="ms-title" placeholder="Milestone (mis. Barang tiba di site)" style="flex:2;min-width:140px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
+      <input id="ms-title" placeholder="Milestone tambahan..." style="flex:2;min-width:140px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
       <input id="ms-date" type="date" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
       <button class="bxs" onclick="addMilestoneRow('${p.id}')">+ Milestone</button>
+      ${milestones.length ? `<button class="bxs" onclick="genStandardTimeline('${p.id}')" title="Tambahkan tahapan standar yang belum ada">⚡ Lengkapi 12 Tahap Standar</button>` : ''}
     </div>` : ''}
 
     <div style="display:flex;align-items:center;gap:7px;margin:12px 0 5px;flex-wrap:wrap;">
@@ -2788,6 +2806,56 @@ function renderPrjDetail(p) {
 }
 
 // ── FASE 12: Milestone (timeline project) & Report engineer ──
+// 12 tahapan standar project GSO (keputusan Julius, 20 Jul 2026)
+const PRJ_TIMELINE_TEMPLATE = [
+  'Survey',
+  'Design (panel, mounting, mesin, conveyor, dll)',
+  'Build of Material List (BOM List)',
+  'Pembelian Barang',
+  'Perakitan / Fabrikasi (panel, mounting, dll)',
+  'Programming (camera / AI software, dll)',
+  'FAT (Factory Acceptance Test)',
+  'Delivery',
+  'Instalasi',
+  'Trial dan Validasi',
+  'BAP (Berita Acara Penyelesaian) / Serah Terima',
+  'Training',
+]
+async function genStandardTimeline(pid) {
+  if (!guardAdmin()) return
+  const existing = (prjChildren?.milestones || []).map(m => m.title.toLowerCase())
+  let added = 0
+  try {
+    for (let i = 0; i < PRJ_TIMELINE_TEMPLATE.length; i++) {
+      const title = PRJ_TIMELINE_TEMPLATE[i]
+      // skip kalau tahapan serupa sudah ada (cek kata kunci pertama)
+      const key = title.split(' ')[0].toLowerCase()
+      if (existing.some(t => t.includes(key))) continue
+      const m = await addProjectMilestone({ project_id: pid, title, sort: i + 1 })
+      if (prjChildren) { prjChildren.milestones = prjChildren.milestones || []; prjChildren.milestones.push(m) }
+      added++
+    }
+    if (prjChildren?.milestones) prjChildren.milestones.sort((a, b) => (a.sort || 99) - (b.sort || 99))
+    renderPrjList()
+    toast(added ? `${added} tahapan standar ditambahkan — tinggal isi target tanggalnya` : 'Semua tahapan standar sudah ada')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+async function updMilestoneProgress(id, val) {
+  try {
+    const prog = Math.max(0, Math.min(100, +val || 0))
+    const m = await updateProjectMilestone(id, { progress: prog, ...(prog >= 100 ? { done: true, done_date: new Date().toISOString().slice(0, 10) } : {}) })
+    if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
+    renderPrjList()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+async function updMilestoneDate(id, val) {
+  if (!guardAdmin()) return
+  try {
+    const m = await updateProjectMilestone(id, { target_date: val || null })
+    if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
+    renderPrjList()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
 async function addMilestoneRow(pid) {
   if (!guardAdmin()) return
   const title = document.getElementById('ms-title')?.value.trim()
@@ -2800,7 +2868,7 @@ async function addMilestoneRow(pid) {
 }
 async function toggleMilestone(id, done) {
   try {
-    const m = await updateProjectMilestone(id, { done, done_date: done ? new Date().toISOString().slice(0, 10) : null })
+    const m = await updateProjectMilestone(id, { done, done_date: done ? new Date().toISOString().slice(0, 10) : null, ...(done ? { progress: 100 } : {}) })
     if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
