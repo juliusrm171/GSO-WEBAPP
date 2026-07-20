@@ -95,8 +95,10 @@ Struktur **2 tingkat** (keputusan 20 Jul 2026): **Area Besar** (kota/wilayah) �
   - Saran area besar tambahan (opsional): Tangerang (Jatake, Millennium, Balaraja), Purwakarta (Kota Bukit Indah, BIC), Subang, Semarang, Surabaya
 - Tiap area besar otomatis punya opsi **"Lainnya"** untuk customer di luar kawasan industri
 
-## FASE 11 — Export & Import Excel (ditambahkan 20 Jul 2026)
+## FASE 11 — Export & Import Excel 🔶 SEBAGIAN SELESAI (20 Jul 2026)
 Semua jalan di sisi browser (SheetJS), tanpa server tambahan.
+✅ Sudah: **Import PO dari file Accurate** ("Daftar Pesanan Penjualan" .xlsx — deteksi header, skip footer, dedup No. SO/PO, normalisasi nama customer, preview + centang + sales default) di tab PO; **Export Excel** PO per bulan & database customer (admin only).
+⏳ Sisa: import stock/produk/customer dari Accurate (nyusul bersama Fase 9, butuh contoh file export per jenis data).
 
 - **Export data ke Excel/CSV** dari web: customer, pricelist, pipeline/shodan, PO, visit, dan stock (setelah Fase 9)
   - Sesuai aturan Fase 1: tombol export hanya tampil untuk **super_admin & admin**
