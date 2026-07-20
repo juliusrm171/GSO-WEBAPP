@@ -127,6 +127,16 @@ export async function deleteProjectMilestone(id) {
   const { error } = await supabase.from('project_milestones').delete().eq('id', id)
   if (error) throw error
 }
+// Milestone yang lewat deadline (belum done & target < hari ini) — untuk banner peringatan & reminder Fase 5
+export async function getOverdueMilestones() {
+  const today = new Date().toISOString().slice(0, 10)
+  const { data, error } = await supabase.from('project_milestones')
+    .select('*, projects(id, name, stage)')
+    .eq('done', false).not('target_date', 'is', null).lt('target_date', today)
+    .order('target_date')
+  if (error) throw error
+  return (data || []).filter(m => m.projects && m.projects.stage !== 'Selesai' && m.projects.stage !== 'Batal')
+}
 export async function addProjectTask(row) {
   const { data, error } = await supabase.from('project_tasks').insert(row).select('*, profiles(name)').single()
   if (error) throw error

@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone, getOverdueMilestones } from '../lib/supabase.js'
 import * as XLSX from 'xlsx'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
@@ -1219,7 +1219,7 @@ export async function renderApp(container, user, logout) {
     addBomRow, updBomStatusBarang, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
     pickImportBom, confirmImportBom, cancelImportBom, bomImpToggle, exportBomXlsx,
     addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
-    genStandardTimeline, updMilestoneProgress, updMilestoneDate,
+    genStandardTimeline, updMilestoneProgress, updMilestoneDate, updMilestoneDuration, autoScheduleTimeline,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -2568,10 +2568,12 @@ function exportStockXlsx() {
 // ═══════════ FASE 12: TAB PROJECT ═══════════
 const PRJ_STAGES = ['Inquiry', 'Penawaran', 'PO', 'Pengadaan', 'Delivery', 'Instalasi', 'Selesai']
 const PRJ_STAGE_COLOR = { Inquiry: '#64748b', Penawaran: '#3b82f6', PO: '#8b5cf6', Pengadaan: '#d97706', Delivery: '#0891b2', Instalasi: '#f59e0b', Selesai: '#16a34a', Batal: '#dc2626' }
-let projects = [], expandedPrjId = null, prjChildren = null
+let projects = [], expandedPrjId = null, prjChildren = null, overdueMs = []
 
 async function loadProjectsData() {
-  try { projects = await getProjects() } catch (e) { console.error(e) }
+  try {
+    ;[projects, overdueMs] = await Promise.all([getProjects(), getOverdueMilestones()])
+  } catch (e) { console.error(e) }
 }
 function togglePrjForm() {
   const el = document.getElementById('prj-form')
@@ -2632,7 +2634,19 @@ function renderPrjList() {
     <div class="sc"><div class="sn">${projects.filter(p => p.stage === 'Instalasi').length}</div><div class="sl">Sedang instalasi</div></div>
     <div class="sc"><div class="sn">${projects.filter(p => p.stage === 'Selesai').length}</div><div class="sl">Selesai</div></div>
     <div class="sc"><div class="sn">${projects.filter(p => p.due_date && p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date < new Date().toISOString().slice(0, 10)).length}</div><div class="sl" style="color:#dc2626;">Lewat target</div></div>`
-  el.innerHTML = f.length ? f.map(p => {
+  // Banner: tahapan lewat deadline (bahan reminder Fase 5)
+  const banner = overdueMs.length ? `
+    <div style="border:1px solid #fca5a5;background:#fef2f2;border-radius:9px;padding:9px 12px;margin-bottom:9px;">
+      <div style="font-size:12px;font-weight:700;color:#dc2626;margin-bottom:4px;">⏰ ${overdueMs.length} tahapan lewat deadline!</div>
+      ${overdueMs.slice(0, 8).map(m => {
+        const days = Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000)
+        return `<div style="font-size:11px;color:#7f1d1d;padding:2px 0;cursor:pointer;" onclick="togglePrjDetail('${m.projects.id}')">
+          • <b>${m.projects.name}</b> — ${m.title} (target ${fmtD(m.target_date)}, telat <b>${days} hari</b>)
+        </div>`
+      }).join('')}
+      ${overdueMs.length > 8 ? `<div style="font-size:10px;color:#991b1b;">…dan ${overdueMs.length - 8} lainnya</div>` : ''}
+    </div>` : ''
+  el.innerHTML = banner + (f.length ? f.map(p => {
     const overdue = p.due_date && p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date < new Date().toISOString().slice(0, 10)
     const row = `
     <div class="dbi" style="flex-direction:column;align-items:stretch;">
@@ -2647,7 +2661,7 @@ function renderPrjList() {
       ${prjStepper(p)}
     </div>`
     return expandedPrjId === p.id ? row + renderPrjDetail(p) : row
-  }).join('') : '<div class="empty">Belum ada project.</div>'
+  }).join('') : '<div class="empty">Belum ada project.</div>')
 }
 async function togglePrjDetail(id) {
   if (expandedPrjId === id) { expandedPrjId = null; prjChildren = null; renderPrjList(); return }
@@ -2697,7 +2711,9 @@ function renderPrjDetail(p) {
           <div class="bar-track" style="width:70px;"><div style="position:absolute;left:0;top:0;bottom:0;width:${prog}%;background:${prog >= 100 ? '#16a34a' : late ? '#dc2626' : '#3b82f6'};border-radius:9px;"></div></div>
           <input type="number" value="${prog}" min="0" max="100" onchange="updMilestoneProgress('${m.id}',this.value)" style="width:46px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;"${m.done ? ' disabled' : ''}>%
         </div>
-        ${isAdmin() ? `<input type="date" value="${m.target_date || ''}" onchange="updMilestoneDate('${m.id}',this.value)" title="Target tanggal" style="padding:2px 5px;border:1px solid ${late ? '#fca5a5' : '#e2e8f0'};border-radius:5px;font-size:10px;background:${late ? '#fef2f2' : '#fff'};">`
+        ${isAdmin() ? `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;color:#64748b;" title="Durasi pengerjaan (hari)">⏱<input type="number" value="${m.duration_days || ''}" min="1" placeholder="hr" onchange="updMilestoneDuration('${m.id}',this.value)" style="width:40px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;">hr</span>`
+        : (m.duration_days ? `<span style="font-size:10px;color:#64748b;">⏱ ${m.duration_days} hr</span>` : '')}
+        ${isAdmin() ? `<input type="date" value="${m.target_date || ''}" onchange="updMilestoneDate('${m.id}',this.value)" title="Target/deadline tahap ini" style="padding:2px 5px;border:1px solid ${late ? '#fca5a5' : '#e2e8f0'};border-radius:5px;font-size:10px;background:${late ? '#fef2f2' : '#fff'};">`
         : (m.target_date ? `<span style="font-size:10px;font-weight:${late ? '700' : '500'};color:${m.done ? '#16a34a' : late ? '#dc2626' : '#64748b'};">${late ? '⚠ TELAT · ' : ''}${fmtD(m.target_date)}</span>` : '')}
         ${m.done && m.done_date ? `<span style="font-size:10px;color:#16a34a;">✓ ${fmtD(m.done_date)}</span>` : ''}
         ${isAdmin() ? `<button class="bdel" style="font-size:10px;" onclick="delMilestone('${m.id}')">✕</button>` : ''}
@@ -2708,7 +2724,8 @@ function renderPrjDetail(p) {
       <input id="ms-title" placeholder="Milestone tambahan..." style="flex:2;min-width:140px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
       <input id="ms-date" type="date" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
       <button class="bxs" onclick="addMilestoneRow('${p.id}')">+ Milestone</button>
-      ${milestones.length ? `<button class="bxs" onclick="genStandardTimeline('${p.id}')" title="Tambahkan tahapan standar yang belum ada">⚡ Lengkapi 12 Tahap Standar</button>` : ''}
+      ${milestones.length ? `<button class="bxs" onclick="genStandardTimeline('${p.id}')" title="Tambahkan tahapan standar yang belum ada">⚡ Lengkapi 12 Tahap Standar</button>
+      <button class="bxs" style="border-color:#0891b2;color:#0e7490;" onclick="autoScheduleTimeline('${p.id}')" title="Isi durasi (hari) tiap tahap dulu, lalu klik ini — target tanggal dihitung berantai dari tanggal mulai project">📆 Hitung Deadline Otomatis</button>` : ''}
     </div>` : ''}
 
     <div style="display:flex;align-items:center;gap:7px;margin:12px 0 5px;flex-wrap:wrap;">
@@ -2856,6 +2873,46 @@ async function updMilestoneDate(id, val) {
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
+async function updMilestoneDuration(id, val) {
+  if (!guardAdmin()) return
+  try {
+    const m = await updateProjectMilestone(id, { duration_days: +val > 0 ? Math.round(+val) : null })
+    if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
+    renderPrjList()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+// Hitung deadline berantai: mulai dari start_date project (atau hari ini),
+// tiap tahap: start = selesai tahap sebelumnya, target = start + durasi - 1
+async function autoScheduleTimeline(pid) {
+  if (!guardAdmin()) return
+  const p = projects.find(x => x.id === pid); if (!p) return
+  const ms = (prjChildren?.milestones || []).slice().sort((a, b) => (a.sort || 99) - (b.sort || 99))
+  if (!ms.length) { toast('Belum ada milestone', false); return }
+  if (ms.some(m => !m.duration_days && !m.done)) { toast('Isi dulu durasi (⏱ hari) untuk semua tahap yang belum selesai', false); return }
+  let cur = new Date((p.start_date || new Date().toISOString().slice(0, 10)) + 'T00:00:00')
+  try {
+    for (const m of ms) {
+      const dur = Math.max(1, +m.duration_days || 1)
+      const start = new Date(cur)
+      const target = new Date(cur); target.setDate(target.getDate() + dur - 1)
+      const u = await updateProjectMilestone(m.id, {
+        start_date: start.toISOString().slice(0, 10),
+        target_date: target.toISOString().slice(0, 10)
+      })
+      const i = prjChildren.milestones.findIndex(x => x.id === m.id); if (i >= 0) prjChildren.milestones[i] = u
+      cur = new Date(target); cur.setDate(cur.getDate() + 1)
+    }
+    // target selesai project = deadline tahap terakhir
+    const lastTarget = prjChildren.milestones.slice().sort((a, b) => (a.sort || 99) - (b.sort || 99)).at(-1)?.target_date
+    if (lastTarget) {
+      const up = await updateProject(pid, { due_date: lastTarget, ...(p.start_date ? {} : { start_date: new Date().toISOString().slice(0, 10) }) })
+      const pi = projects.findIndex(x => x.id === pid); if (pi >= 0) projects[pi] = up
+    }
+    overdueMs = await getOverdueMilestones()
+    renderPrjList()
+    toast('Deadline semua tahap terhitung — selesai ' + fmtD(lastTarget))
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
 async function addMilestoneRow(pid) {
   if (!guardAdmin()) return
   const title = document.getElementById('ms-title')?.value.trim()
@@ -2870,6 +2927,7 @@ async function toggleMilestone(id, done) {
   try {
     const m = await updateProjectMilestone(id, { done, done_date: done ? new Date().toISOString().slice(0, 10) : null, ...(done ? { progress: 100 } : {}) })
     if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
+    try { overdueMs = await getOverdueMilestones() } catch (e) {}
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
@@ -3239,6 +3297,16 @@ async function renderEngineerDash() {
         </div>`
       }).join('') : '<div class="empty">Tidak ada task terbuka untuk kamu. 🎉</div>'}
     </div>
+    ${overdueMs.length ? `<div class="card" style="border-left:4px solid #dc2626;">
+      <div class="chd" style="color:#dc2626;">⏰ Tahapan Lewat Deadline (${overdueMs.length})</div>
+      ${overdueMs.slice(0, 10).map(m => {
+        const days = Math.floor((Date.now() - new Date(m.target_date).getTime()) / 86400000)
+        return `<div style="font-size:12px;padding:4px 0;border-bottom:1px solid #f1f5f9;">
+          <b>${m.projects.name}</b> — ${m.title} <span style="color:#dc2626;font-weight:700;">(telat ${days} hari)</span>
+          <button class="bxs" style="margin-left:6px;" onclick="nav('project');setTimeout(()=>togglePrjDetail('${m.projects.id}'),50)">Buka</button>
+        </div>`
+      }).join('')}
+    </div>` : ''}
     <div class="card">
       <div class="chd">🏗 Progress Project Aktif</div>
       ${active.length ? active.map(p => `
