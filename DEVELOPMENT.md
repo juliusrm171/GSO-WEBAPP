@@ -44,9 +44,10 @@ Dikerjakan sebelum pipeline karena pipeline akan menarik data dari quotation.
 ## FASE 5 — Reminder Email & Google Calendar
 Dikerjakan setelah Fase 3-4 karena butuh data FU yang sudah stabil.
 
-- Shodan/pipeline tanpa update 2 minggu → kirim reminder otomatis ke **Gmail sales ybs + email perusahaan** dan buat event di **Google Calendar** sales
-- Teknis: Supabase Edge Function + pg_cron (cek harian); email via Resend/SMTP; calendar via Google Calendar API (perlu setup Google Cloud project + OAuth/service account — akan dipandu)
-- *Open: alamat email perusahaan yang dipakai?*
+- Shodan/pipeline tanpa update 2 minggu → kirim reminder otomatis ke **email kantor + Gmail pribadi sales ybs** dan buat event di **Google Calendar** sales
+- **Calendar:** tiap sales menghubungkan **Gmail pribadinya** sekali via login Google (OAuth) di halaman profil → event reminder masuk calendar pribadi (keputusan 20 Jul 2026)
+- **Email sales:** tiap user punya 2 alamat di profilnya — email kantor (@gso.co.id) + Gmail pribadi; keduanya dikirimi reminder. Daftar alamat 3 user awal sudah diterima dari Julius (20 Jul) — disimpan di catatan internal, tidak di-commit ke repo publik
+- Teknis: Supabase Edge Function + pg_cron (cek harian); email via SMTP webmail GSO (kredensial menyusul) atau Resend; calendar via Google Calendar API (Google Cloud project + OAuth — akan dipandu)
 
 ## FASE 6 — PO & Target Sales ✅ SELESAI (19 Jul 2026)
 - **Input PO terpisah** (bukan dari pipeline): diinput admin sales — nomor PO, customer, sales, nilai, tanggal, link ke quotation (opsional)
@@ -81,9 +82,18 @@ Independen — modul baru.
 - *Open: role admin gudang (lihat Fase 1)*
 
 ## FASE 10 — Customer per Area
-- Field area per customer: **kota/provinsi + kawasan industri** (contoh: Cikarang → MM2100, Lippo Cikarang, dst.)
-- Filter/pisah view database customer per area
-- *Open: daftar area final menunggu diskusi internal — buat fleksibel (admin bisa tambah area sendiri)*
+Struktur **2 tingkat** (keputusan 20 Jul 2026): **Area Besar** (kota/wilayah) → **Area Kecil** (kawasan industri). Satu customer = satu area. Admin bisa tambah area besar/kecil sendiri kapan saja.
+
+- Form customer: pilih Area Besar dulu → muncul dropdown Area Kecil milik area itu
+- Filter database customer per area besar ATAU langsung per area kecil
+- **Seed list awal** (disusun Claude 20 Jul dari kawasan industri umum — admin tinggal koreksi/tambah):
+  - **Jakarta:** JIEP Pulogadung, KBN Cakung, KBN Marunda, Sunter, Cilincing, Lainnya
+  - **Cikarang/Bekasi:** Jababeka, MM2100, EJIP, Delta Silicon (Lippo Cikarang), Hyundai (BIIE), GIIC Deltamas, Bekasi Fajar (MM2100 area), Tambun/Cibitung, Lainnya
+  - **Karawang:** KIIC, Suryacipta, Indotaisei, KNIC, Mitra Karawang (KIM), Podomoro Industrial Park, Lainnya
+  - **Bogor:** Sentul, Cibinong (CCIE), Gunung Putri, Cileungsi (Menara Permai), Lainnya
+  - **Bandung:** Rancaekek (Dwipapuri), Batujajar, Cimahi/Leuwigajah, Majalaya, Padalarang, Lainnya
+  - Saran area besar tambahan (opsional): Tangerang (Jatake, Millennium, Balaraja), Purwakarta (Kota Bukit Indah, BIC), Subang, Semarang, Surabaya
+- Tiap area besar otomatis punya opsi **"Lainnya"** untuk customer di luar kawasan industri
 
 ## FASE 11 — Export & Import Excel (ditambahkan 20 Jul 2026)
 Semua jalan di sisi browser (SheetJS), tanpa server tambahan.
