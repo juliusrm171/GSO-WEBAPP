@@ -296,6 +296,12 @@ const PER = 40
 const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin', sales: 'Sales', engineer: 'Engineer' }
 const isAdmin = () => myRole === 'admin' || myRole === 'super_admin'
 const isSuper = () => myRole === 'super_admin'
+// Hanya user bertanda is_sales yang ikut target/leaderboard/barometer visit.
+// Fallback: kalau kolom is_sales belum ada di DB (migration belum jalan), pakai perilaku lama.
+const salesProfiles = () => {
+  const hasFlag = profiles.some(p => p.is_sales !== undefined && p.is_sales !== null)
+  return hasFlag ? profiles.filter(p => p.is_sales) : profiles.filter(p => p.role !== 'engineer')
+}
 const canSeeVal = () => myRole !== 'engineer'
 const canQuote = () => myRole !== 'engineer'
 function guardAdmin() { if (!isAdmin()) { toast('Hanya admin yang bisa melakukan ini', false); return false } return true }
@@ -1018,7 +1024,7 @@ export async function renderApp(container, user, logout) {
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
     doPDF, doSaveQuo, doLogout: onLogout,
     switchDbTab,
-    openProfile, closeProfile, saveMyProfile, chgUserRole, genQuoNo,
+    openProfile, closeProfile, saveMyProfile, chgUserRole, chgUserSales, genQuoNo,
     updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
     vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList,
@@ -1072,6 +1078,9 @@ function openProfile() {
     document.getElementById('pf-user-list').innerHTML = profiles.map(p => `
       <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;">
         <div style="flex:1;font-size:12px;">${p.name || '-'}<div style="font-size:10px;color:#94a3b8;">${p.initials ? 'Inisial: ' + p.initials : ''}</div></div>
+        <label title="Centang kalau user ini punya target penjualan & visit (muncul di Target, Leaderboard, Barometer)" style="display:flex;align-items:center;gap:4px;font-size:11px;color:#64748b;cursor:pointer;white-space:nowrap;">
+          <input type="checkbox"${p.is_sales ? ' checked' : ''} onchange="chgUserSales('${p.id}',this.checked)">Sales
+        </label>
         <select style="padding:4px 7px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;" onchange="chgUserRole('${p.id}',this.value)">
           ${Object.entries(ROLE_LABELS).map(([v, l]) => `<option value="${v}"${(p.role || 'sales') === v ? ' selected' : ''}>${l}</option>`).join('')}
         </select>
@@ -1095,6 +1104,15 @@ async function saveMyProfile() {
     if (noEl && /^Q[A-Z]{1,4}\d{6}\d{2}$/.test(noEl.value)) noEl.value = genQuoNo()
     toast('Profil tersimpan!')
     closeProfile()
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+async function chgUserSales(id, isSales) {
+  if (!isSuper()) { toast('Hanya super admin', false); return }
+  try {
+    const p = await updateProfile(id, { is_sales: !!isSales })
+    const i = profiles.findIndex(x => x.id === p.id); if (i >= 0) profiles[i] = p
+    renderTargets(); toast((p.name || 'User') + (p.is_sales ? ' ditandai sebagai sales' : ' bukan sales lagi'))
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
@@ -1574,11 +1592,8 @@ function renderVisitMonthly() {
   const el = document.getElementById('visit-monthly'); if (!el) return
   const mv = currentMonthVisits()
 
-  // All known sales names (from profiles + visits + pipeline)
-  const allSales = [...new Set([
-    ...profiles.map(p => p.name),
-    ...visits.map(v => v.profiles?.name || v.sales_name),
-  ].filter(Boolean))].sort()
+  // Hanya user bertanda sales (is_sales) yang masuk barometer visit
+  const allSales = [...new Set(salesProfiles().map(p => p.name).filter(Boolean))].sort()
 
   const now = new Date()
   const dayOfMonth = now.getDate()
@@ -1768,7 +1783,7 @@ function renderPO() {
   if (mEl && !mEl.value) mEl.value = curMonth()
   const salesSel = document.getElementById('po-sales-in')
   if (salesSel && !salesSel.options.length) {
-    salesSel.innerHTML = profiles.filter(p => p.role !== 'engineer').map(p => `<option value="${p.id}"${p.id === currentUser?.id ? ' selected' : ''}>${p.name || '-'}</option>`).join('')
+    salesSel.innerHTML = salesProfiles().map(p => `<option value="${p.id}"${p.id === currentUser?.id ? ' selected' : ''}>${p.name || '-'}</option>`).join('')
   }
   const quoSel = document.getElementById('po-quo')
   if (quoSel && quoSel.options.length <= 1) {
@@ -1859,7 +1874,7 @@ function renderTargets() {
   const mEl = document.getElementById('tg-month')
   if (mEl && !mEl.value) mEl.value = document.getElementById('po-month')?.value || curMonth()
   const period = mEl?.value || curMonth()
-  const team = profiles.filter(p => p.role !== 'engineer')
+  const team = salesProfiles()
   el.innerHTML = team.map(p => {
     const t = targets.find(x => x.sales_id === p.id && x.period === period)
     const tv = +(t?.target || 0), vt = +(t?.visit_target || 0)
@@ -2365,10 +2380,7 @@ function renderDashboard() {
     const now = new Date()
     const ym = now.toISOString().slice(0, 7)
     const mv = visits.filter(v => (v.visit_date || '').startsWith(ym))
-    const allSales = [...new Set([
-      ...profiles.filter(p => p.role !== 'engineer').map(p => p.name),
-      ...visits.map(v => v.profiles?.name || v.sales_name),
-    ].filter(Boolean))].sort()
+    const allSales = [...new Set(salesProfiles().map(p => p.name).filter(Boolean))].sort()
     const dayOfMonth = now.getDate()
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
     dvEl.innerHTML = allSales.length ? allSales.map(name => {
@@ -2504,7 +2516,8 @@ function renderLeaderboard() {
   const [y, m] = lbMonth.split('-')
   const lbl = document.getElementById('lb-month-lbl'); if (lbl) lbl.textContent = MONTH_ID[+m - 1] + ' ' + y
   const map = {}
-  pos.filter(p => (p.po_date || '').startsWith(lbMonth)).forEach(p => {
+  const salesIds = new Set(salesProfiles().map(p => p.id))
+  pos.filter(p => (p.po_date || '').startsWith(lbMonth) && (!p.sales_id || salesIds.has(p.sales_id))).forEach(p => {
     const id = p.sales_id || 'x', name = poSalesName(p)
     if (!map[id]) map[id] = { name, count: 0, value: 0 }
     map[id].count++
