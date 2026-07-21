@@ -2350,26 +2350,53 @@ function pickImportPO() {
 async function parseAccuratePO(file) {
   try {
     const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true })
-    const ws = wb.Sheets[wb.SheetNames[0]]
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
-    const hi = raw.findIndex(r => (r || []).some(c => String(c || '').trim() === 'Nomor #'))
-    if (hi < 0) { toast('Format tidak dikenali — kolom "Nomor #" (export Accurate) tidak ditemukan', false); return }
-    const head = raw[hi].map(c => String(c || '').trim())
-    const iSO = head.indexOf('Nomor #'), iPO = head.indexOf('No. PO'), iDate = head.indexOf('Tanggal'), iCust = head.indexOf('Pelanggan'), iTot = head.indexOf('Total')
-    const existSO = new Set(pos.map(p => p.so_number).filter(Boolean))
-    const existPO = new Set(pos.map(p => p.po_number).filter(Boolean))
+    const up = c => String(c || '').trim().toLowerCase()
+    // Set nomor PO & SO yang SUDAH ada — dipakai untuk melewati data lama (tidak diubah)
+    const existPO = new Set(pos.map(p => (p.po_number || '').trim().toLowerCase()).filter(Boolean))
+    const existSO = new Set(pos.map(p => (p.so_number || '').trim().toLowerCase()).filter(Boolean))
+    // Peta nama sales (dari file) → id profil, best-effort
+    const salesByName = {}
+    profiles.forEach(p => { if (p.name) salesByName[p.name.trim().toLowerCase().split(' ')[0]] = p.id })
     poImportRows = []; poImportSkipped = 0
-    for (const r of raw.slice(hi + 1)) {
-      const so = String(r?.[iSO] || '').trim()
-      if (!so || !/^SO/i.test(so)) continue // baris kosong / footer " dari N"
-      const po = String(r?.[iPO] || '').trim()
-      let d = r?.[iDate]
-      d = d instanceof Date ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : String(d || '').slice(0, 10)
-      const cust = normalizeCompanyName(String(r?.[iCust] || '').trim())
-      const amt = Math.round((+r?.[iTot] || 0) * 100) / 100
-      if (existSO.has(so) || (po && existPO.has(po))) { poImportSkipped++; continue }
-      poImportRows.push({ so_number: so, po_number: po || so, po_date: d, customer_name: cust, amount: amt, include: true })
+    let sheetsParsed = 0
+    for (const shName of wb.SheetNames) {
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[shName], { header: 1, raw: true })
+      // Cari baris header: ada kolom SO (Nomor # / No. Pesanan) DAN No. PO
+      let hi = -1
+      for (let r = 0; r < Math.min(raw.length, 15); r++) {
+        const cells = (raw[r] || []).map(up)
+        const hasSO = cells.some(c => ['nomor #', 'no. pesanan', 'no pesanan', 'nomor pesanan'].includes(c))
+        const hasPO = cells.some(c => ['no. po', 'no po', 'nomor po', 'po number'].includes(c))
+        if ((hasSO || hasPO) && cells.some(c => ['total', 'jumlah', 'nilai'].includes(c))) { hi = r; break }
+      }
+      if (hi < 0) continue
+      sheetsParsed++
+      const head = raw[hi].map(up)
+      const col = (...n) => { for (const x of n) { const i = head.indexOf(x); if (i >= 0) return i } return -1 }
+      const iSO = col('nomor #', 'no. pesanan', 'no pesanan', 'nomor pesanan')
+      const iPO = col('no. po', 'no po', 'nomor po', 'po number')
+      const iDate = col('tanggal', 'tgl pesan', 'tgl', 'tanggal pesan')
+      const iCust = col('pelanggan', 'nama pelanggan', 'customer', 'nama customer')
+      const iTot = col('total', 'jumlah', 'nilai')
+      const iSales = col('sales', 'salesman', 'pic sales')
+      for (const r of raw.slice(hi + 1)) {
+        const so = iSO >= 0 ? String(r?.[iSO] || '').trim() : ''
+        const po = iPO >= 0 ? String(r?.[iPO] || '').trim() : ''
+        if (!so && !po) continue                        // baris kosong / footer
+        if (so && /^dari\s/i.test(so)) continue
+        let d = iDate >= 0 ? r?.[iDate] : ''
+        d = d instanceof Date ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : String(d || '').slice(0, 10)
+        const cust = normalizeCompanyName(String(r?.[iCust] || '').trim())
+        const amt = Math.round((+r?.[iTot] || 0) * 100) / 100
+        const salesName = iSales >= 0 ? String(r?.[iSales] || '').trim() : ''
+        const salesId = salesName ? (salesByName[salesName.toLowerCase().split(' ')[0]] || null) : null
+        // LEWATI kalau No. PO atau No. SO-nya sudah ada (data lama tidak diubah)
+        const dup = (po && existPO.has(po.toLowerCase())) || (so && existSO.has(so.toLowerCase()))
+        if (dup) { poImportSkipped++; continue }
+        poImportRows.push({ so_number: so || null, po_number: po || so, po_date: d, customer_name: cust, amount: amt, sales_id: salesId, sales_name_file: salesName, include: true })
+      }
     }
+    if (!sheetsParsed) { toast('Format tidak dikenali — tidak ketemu kolom No. PO/Pesanan + Total/Jumlah', false); return }
     renderPOImportPreview()
   } catch (e) { toast('Gagal baca file: ' + e.message, false) }
 }
@@ -2413,13 +2440,14 @@ async function confirmImportPO() {
   if (!guardAdmin()) return
   const chosen = poImportRows.filter(r => r.include)
   if (!chosen.length) { toast('Tidak ada baris dicentang', false); return }
-  const salesId = document.getElementById('po-imp-sales')?.value || null
+  const defSalesId = document.getElementById('po-imp-sales')?.value || null
   const btn = document.getElementById('btn-confirm-imp')
   if (btn) { btn.disabled = true; btn.textContent = 'Mengimport…' }
   let ok = 0, fail = 0
   for (const r of chosen) {
     try {
-      const p = await addPO({ po_number: r.po_number, so_number: r.so_number, po_date: r.po_date, customer_name: r.customer_name, sales_id: salesId, quotation_id: null, amount: r.amount, notes: 'Import Accurate' })
+      // Sales dari file (kalau cocok dgn profil) diprioritaskan; kalau tidak, pakai default dropdown
+      const p = await addPO({ po_number: r.po_number, so_number: r.so_number, po_date: r.po_date, customer_name: r.customer_name, sales_id: r.sales_id || defSalesId, quotation_id: null, amount: r.amount, notes: 'Import' })
       pos.unshift(p); ok++
       if (btn && ok % 20 === 0) btn.textContent = `Mengimport… ${ok}/${chosen.length}`
     } catch (e) { fail++; console.error(r.so_number, e) }
@@ -2482,20 +2510,20 @@ async function parseCustFile(file) {
     let hi = -1
     for (let r = 0; r < Math.min(raw.length, 8); r++) {
       const cells = (raw[r] || []).map(up)
-      if (cells.some(c => ['nama', 'nama perusahaan', 'perusahaan', 'customer', 'nama customer', 'company'].includes(c))) { hi = r; break }
+      if (cells.some(c => ['nama', 'nama perusahaan', 'perusahaan', 'customer', 'nama customer', 'company', 'nama pelanggan', 'pelanggan'].includes(c))) { hi = r; break }
     }
-    if (hi < 0) { toast('Tidak ketemu kolom "Nama". Gunakan file hasil Export sebagai template.', false); return }
+    if (hi < 0) { toast('Tidak ketemu kolom nama customer. Header didukung: Nama / Nama Pelanggan / Perusahaan / Customer.', false); return }
     const head = raw[hi].map(up)
     const col = (...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i } return -1 }
-    const iN = col('nama', 'nama perusahaan', 'perusahaan', 'customer', 'nama customer', 'company')
+    const iN = col('nama', 'nama perusahaan', 'perusahaan', 'customer', 'nama customer', 'company', 'nama pelanggan', 'pelanggan')
     const iType = col('tipe', 'type', 'customer_type')
-    const iC = col('kontak', 'kontak person', 'contact', 'pic')
-    const iT = col('telp', 'telp / mobile', 'telepon', 'phone', 'hp', 'mobile', 'tel')
+    const iC = col('kontak', 'kontak person', 'contact', 'pic', 'nama kontak', 'contact person')
+    const iT = col('telp', 'telp / mobile', 'telepon', 'phone', 'hp', 'mobile', 'tel', 'no. telp', 'no telp')
     const iE = col('email', 'e-mail')
     const iInd = col('industri', 'industri / keterangan', 'industry', 'keterangan')
     const iAB = col('area besar', 'area_big', 'kota', 'wilayah')
     const iAS = col('area kecil', 'area_small', 'kawasan')
-    const iAddr = col('alamat', 'address')
+    const iAddr = col('alamat', 'address', 'alamat 1', 'alamat lengkap')
     custImportRows = []
     for (const r of raw.slice(hi + 1)) {
       const rawName = String(r?.[iN] || '').trim()
@@ -2775,19 +2803,32 @@ async function parseAccurateStock(file) {
       }
     }
     if (hi < 0) { toast('Format tidak dikenali — tidak ketemu kolom kode barang + kuantitas. Kirim contoh filenya ke Claude untuk disesuaikan.', false); return }
-    stockImportRows = []
+    // Agregasi per part number. Mendukung format STOK OPNAME (satu baris per serial number,
+    // part number hanya di baris pertama tiap grup) — part & nama di-carry-forward, qty dijumlah.
+    const agg = {} // key = part_number (lower) → {part, name, qty}
+    let lastPart = '', lastName = ''
     for (const r of raw.slice(hi + 1)) {
-      const part = String(r?.[iPart] || '').trim()
+      let part = String(r?.[iPart] || '').trim()
+      let name = iName >= 0 ? String(r?.[iName] || '').trim() : ''
+      const qtyRaw = r?.[iQty]
+      const qty = +qtyRaw || 0
+      if (part) { lastPart = part; lastName = name || lastName }
+      else { part = lastPart; if (!name) name = lastName } // baris serial lanjutan
       if (!part || /^dari\s/i.test(part)) continue
-      const qty = +r?.[iQty] || 0
-      const existing = stockItems.find(i => i.part_number.toLowerCase() === part.toLowerCase())
-      stockImportRows.push({
-        part_number: part,
-        name: iName >= 0 ? String(r?.[iName] || '').trim() : '',
-        unit: iUnit >= 0 ? (String(r?.[iUnit] || '').trim() || 'unit') : 'unit',
-        qty, isNew: !existing, oldQty: existing ? +existing.qty : null, include: true
-      })
+      if (qty <= 0 && qtyRaw !== 0) continue // baris tanpa qty valid
+      const k = part.toLowerCase()
+      if (!agg[k]) agg[k] = { part_number: part, name: name || lastName, qty: 0 }
+      agg[k].qty += qty
+      if (name && !agg[k].name) agg[k].name = name
     }
+    stockImportRows = Object.values(agg).map(a => {
+      const existing = stockItems.find(i => i.part_number.toLowerCase() === a.part_number.toLowerCase())
+      return {
+        part_number: a.part_number, name: a.name || '',
+        unit: iUnit >= 0 ? 'unit' : 'unit', qty: a.qty,
+        isNew: !existing, oldQty: existing ? +existing.qty : null, include: true
+      }
+    })
     renderStockImportPreview()
   } catch (e) { toast('Gagal baca file: ' + e.message, false) }
 }
