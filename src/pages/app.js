@@ -182,6 +182,8 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
 .bar-label{width:90px;font-size:11px;color:#64748b;flex-shrink:0;}
 .bar-track{flex:1;height:18px;background:#f1f5f9;border-radius:9px;overflow:hidden;position:relative;}
+.bar{height:7px;background:#eef2f7;border-radius:6px;overflow:hidden;position:relative;margin-top:3px;}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:#2563eb;}
 .bar-fill{height:100%;border-radius:9px;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;font-size:9px;color:#fff;font-weight:600;white-space:nowrap;transition:width .4s;}
 .bar-val{width:70px;text-align:right;font-size:11px;font-weight:600;color:#002060;flex-shrink:0;}
 .lb-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;}
