@@ -1131,9 +1131,11 @@ export async function renderApp(container, user, logout) {
             <option value="End User">End User</option>
           </select>
           <select id="cust-area-f" onchange="setCustAreaFilter(this.value)"><option value="all">Semua Area</option></select>
+          <button class="bxs" id="btn-imp-cust" onclick="pickImportCust()" title="Import customer dari Excel (.xlsx)">📥 Import</button>
           <button class="bs" style="padding:6px 10px;font-size:11px;" id="btn-exp-cust-xlsx" onclick="exportCustXlsx()">⬇ Excel</button>
           <button class="bs" style="padding:6px 10px;font-size:11px;" onclick="loadCustomers()">↻ Refresh</button>
         </div>
+        <div id="cust-import-preview" style="display:none;margin-bottom:10px;"></div>
         <div id="db-cust-list"></div>
       </div>
     </div>
@@ -1143,8 +1145,13 @@ export async function renderApp(container, user, logout) {
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;">
           <div style="font-size:14px;font-weight:500;">Produk Tersimpan (<span id="pc">0</span>)</div>
-          <button class="bxs" id="btn-add-prod" onclick="toggleAP()">+ Tambah Manual</button>
+          <div style="display:flex;gap:6px;">
+            <button class="bxs" id="btn-imp-prod" onclick="pickImportProd()" title="Import produk dari Excel">📥 Import</button>
+            <button class="bxs" id="btn-exp-prod" onclick="exportProdXlsx()">⬇ Excel</button>
+            <button class="bxs" id="btn-add-prod" onclick="toggleAP()">+ Tambah Manual</button>
+          </div>
         </div>
+        <div id="prod-import-preview" style="display:none;margin-bottom:8px;"></div>
         <div id="ap" style="display:none;padding:9px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">
           <div class="g2" style="margin-bottom:7px;">
             <div class="fld"><label>Nama</label><input id="np-n"></div>
@@ -1284,6 +1291,8 @@ export async function renderApp(container, user, logout) {
     renderCustList, setCustTypeFilter, toggleAddCust, setNewCustType, saveNewCust, delCustDB,
     renderCleanPanel, fixOneName, fixAllNames, mergeDupGroup, setCustAreaFilter, pickAttach,
     pickImportPO, confirmImportPO, cancelImportPO, poImpToggle, exportPOXlsx, exportCustXlsx,
+    pickImportCust, confirmImportCust, cancelImportCust, custImpToggle,
+    exportProdXlsx, pickImportProd, confirmImportProd, cancelImportProd, prodImpToggle,
     saveCompanyTarget, setPOSales,
     smPartChange, saveStockItemManual, updStockQty, renderStock, delStockItem, loadStock,
     pickImportStock, confirmImportStock, cancelImportStock, stockImpToggle, exportStockXlsx,
@@ -1338,7 +1347,7 @@ function applyRoleUI() {
 
   // Non-admin: sembunyikan tombol tulis database, export, dan kunci target visit
   if (!isAdmin()) {
-    ;['btn-add-cust', 'btn-add-prod', 'btn-exp-csv', 'btn-exp-cust-xlsx', 'btn-po-import', 'btn-po-export'].forEach(id => {
+    ;['btn-add-cust', 'btn-add-prod', 'btn-exp-csv', 'btn-exp-cust-xlsx', 'btn-imp-cust', 'btn-imp-prod', 'btn-exp-prod', 'btn-po-import', 'btn-po-export'].forEach(id => {
       const el = document.getElementById(id); if (el) el.style.display = 'none'
     })
     const vt = document.getElementById('visit-target'); if (vt) vt.disabled = true
@@ -2448,6 +2457,204 @@ function exportCustXlsx() {
   XLSX.utils.book_append_sheet(wb, ws, 'Customers')
   XLSX.writeFile(wb, 'Customers_GSO.xlsx')
   toast('Excel terdownload ✓')
+}
+
+// Import customer dari Excel (format sama seperti hasil export; header fleksibel)
+let custImportRows = []
+function pickImportCust() {
+  if (!guardAdmin()) return
+  let inp = document.getElementById('cust-import-input')
+  if (!inp) {
+    inp = document.createElement('input')
+    inp.type = 'file'; inp.id = 'cust-import-input'; inp.accept = '.xlsx,.xls,.csv'; inp.style.display = 'none'
+    document.body.appendChild(inp)
+  }
+  inp.onchange = async () => { const f = inp.files[0]; inp.value = ''; if (f) await parseCustFile(f) }
+  inp.click()
+}
+async function parseCustFile(file) {
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
+    const up = c => String(c || '').trim().toLowerCase()
+    // Cari baris header: yang punya kolom "nama" (atau perusahaan/customer)
+    let hi = -1
+    for (let r = 0; r < Math.min(raw.length, 8); r++) {
+      const cells = (raw[r] || []).map(up)
+      if (cells.some(c => ['nama', 'nama perusahaan', 'perusahaan', 'customer', 'nama customer', 'company'].includes(c))) { hi = r; break }
+    }
+    if (hi < 0) { toast('Tidak ketemu kolom "Nama". Gunakan file hasil Export sebagai template.', false); return }
+    const head = raw[hi].map(up)
+    const col = (...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i } return -1 }
+    const iN = col('nama', 'nama perusahaan', 'perusahaan', 'customer', 'nama customer', 'company')
+    const iType = col('tipe', 'type', 'customer_type')
+    const iC = col('kontak', 'kontak person', 'contact', 'pic')
+    const iT = col('telp', 'telp / mobile', 'telepon', 'phone', 'hp', 'mobile', 'tel')
+    const iE = col('email', 'e-mail')
+    const iInd = col('industri', 'industri / keterangan', 'industry', 'keterangan')
+    const iAB = col('area besar', 'area_big', 'kota', 'wilayah')
+    const iAS = col('area kecil', 'area_small', 'kawasan')
+    const iAddr = col('alamat', 'address')
+    custImportRows = []
+    for (const r of raw.slice(hi + 1)) {
+      const rawName = String(r?.[iN] || '').trim()
+      if (!rawName) continue
+      const type = iType >= 0 && /end|individu|perorangan/i.test(String(r[iType] || '')) ? 'End User' : 'PT'
+      const name = type === 'PT' ? normalizeCompanyName(rawName) : rawName
+      const dup = customers.find(c => normCustKey(c.company) === normCustKey(name))
+      custImportRows.push({
+        company: name, customer_type: type,
+        contact: iC >= 0 ? String(r[iC] || '').trim() : '',
+        tel: iT >= 0 ? String(r[iT] || '').trim() : '',
+        email: iE >= 0 ? String(r[iE] || '').trim() : '',
+        industry: iInd >= 0 ? String(r[iInd] || '').trim() : '',
+        area_big: iAB >= 0 ? (String(r[iAB] || '').trim() || null) : null,
+        area_small: iAS >= 0 ? (String(r[iAS] || '').trim() || null) : null,
+        address: iAddr >= 0 ? String(r[iAddr] || '').trim() : '',
+        dupId: dup?.id || null, include: !dup // default: baru dicentang, duplikat tidak
+      })
+    }
+    renderCustImportPreview()
+  } catch (e) { toast('Gagal baca file: ' + e.message, false) }
+}
+function custImpToggle(i, on) { if (custImportRows[i]) custImportRows[i].include = on }
+function cancelImportCust() { custImportRows = []; const el = document.getElementById('cust-import-preview'); if (el) { el.style.display = 'none'; el.innerHTML = '' } }
+function renderCustImportPreview() {
+  const el = document.getElementById('cust-import-preview'); if (!el) return
+  el.style.display = ''
+  if (!custImportRows.length) { el.innerHTML = '<div class="empty">Tidak ada baris customer terbaca.</div>'; return }
+  const nNew = custImportRows.filter(r => !r.dupId).length, nDup = custImportRows.length - nNew
+  el.innerHTML = `
+    <div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:9px;padding:10px 12px;">
+      <div style="font-size:12px;font-weight:600;color:#1e40af;margin-bottom:6px;">📥 Preview Import Customer — ${nNew} baru, ${nDup} sudah ada (duplikat)</div>
+      <div style="font-size:10px;color:#64748b;margin-bottom:8px;">Nama perusahaan dirapikan otomatis (format "PT ..."). Duplikat default tidak dicentang; centang untuk MENIMPA data lamanya.</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button class="bp" style="padding:5px 12px;font-size:11px;" id="btn-confirm-cust-imp" onclick="confirmImportCust()">✅ Import yang Dicentang</button>
+        <button class="bs" style="padding:5px 10px;font-size:11px;" onclick="cancelImportCust()">Batal</button>
+      </div>
+      <div style="max-height:240px;overflow:auto;border:1px solid #dbeafe;border-radius:7px;background:#fff;">
+        <table class="piptbl" style="font-size:10.5px;">
+          <thead><tr><th></th><th>Nama</th><th>Tipe</th><th>Kontak</th><th>Telp</th><th>Area</th><th>Status</th></tr></thead>
+          <tbody>${custImportRows.map((r, i) => `<tr>
+            <td><input type="checkbox"${r.include ? ' checked' : ''} onchange="custImpToggle(${i},this.checked)"></td>
+            <td>${esc(r.company)}</td><td>${r.customer_type}</td><td>${esc(r.contact)}</td><td>${esc(r.tel)}</td>
+            <td style="font-size:9.5px;color:#64748b;">${esc([r.area_big, r.area_small].filter(Boolean).join(' · '))}</td>
+            <td>${r.dupId ? '<span style="color:#d97706;font-weight:600;">sudah ada</span>' : '<span style="color:#16a34a;font-weight:600;">BARU</span>'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`
+}
+async function confirmImportCust() {
+  if (!guardAdmin()) return
+  const chosen = custImportRows.filter(r => r.include)
+  if (!chosen.length) { toast('Tidak ada baris dicentang', false); return }
+  const btn = document.getElementById('btn-confirm-cust-imp')
+  if (btn) { btn.disabled = true; btn.textContent = 'Mengimport…' }
+  let ok = 0, fail = 0
+  for (const r of chosen) {
+    try {
+      const { dupId, include, ...fields } = r
+      const c = dupId ? await updateCustomerFields(dupId, fields) : await upsertCustomer(fields)
+      const idx = customers.findIndex(x => x.id === c.id)
+      if (idx >= 0) customers[idx] = c; else customers.unshift(c)
+      ok++
+      if (btn && ok % 25 === 0) btn.textContent = `Mengimport… ${ok}/${chosen.length}`
+    } catch (e) { fail++; console.error(r.company, e) }
+  }
+  cancelImportCust(); refreshAreaFilter(); renderCustList('')
+  document.getElementById('cc').textContent = customers.length
+  toast(`Import customer selesai: ${ok} tersimpan${fail ? `, ${fail} gagal` : ''}`)
+}
+
+// Export & Import Produk Tersimpan
+function exportProdXlsx() {
+  if (!guardAdmin()) return
+  if (!products.length) { toast('Belum ada produk', false); return }
+  const data = products.map(p => ({ 'Nama': p.name || '', 'Part Number': p.part || '', 'Harga': +p.price || 0, 'Satuan': p.unit || 'unit', 'Kategori': p.category || '' }))
+  const ws = XLSX.utils.json_to_sheet(data)
+  ws['!cols'] = [{ wch: 40 }, { wch: 22 }, { wch: 14 }, { wch: 9 }, { wch: 18 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Produk')
+  XLSX.writeFile(wb, 'Produk_GSO.xlsx')
+  toast('Excel terdownload ✓')
+}
+let prodImportRows = []
+function pickImportProd() {
+  if (!guardAdmin()) return
+  let inp = document.getElementById('prod-import-input')
+  if (!inp) {
+    inp = document.createElement('input')
+    inp.type = 'file'; inp.id = 'prod-import-input'; inp.accept = '.xlsx,.xls,.csv'; inp.style.display = 'none'
+    document.body.appendChild(inp)
+  }
+  inp.onchange = async () => { const f = inp.files[0]; inp.value = ''; if (f) await parseProdFile(f) }
+  inp.click()
+}
+async function parseProdFile(file) {
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true })
+    const up = c => String(c || '').trim().toLowerCase()
+    let hi = -1
+    for (let r = 0; r < Math.min(raw.length, 8); r++) { if ((raw[r] || []).map(up).some(c => ['nama', 'name', 'part name', 'nama barang'].includes(c))) { hi = r; break } }
+    if (hi < 0) { toast('Tidak ketemu kolom "Nama". Pakai file hasil Export sebagai template.', false); return }
+    const head = raw[hi].map(up)
+    const col = (...n) => { for (const x of n) { const i = head.indexOf(x); if (i >= 0) return i } return -1 }
+    const iN = col('nama', 'name', 'part name', 'nama barang'), iP = col('part number', 'part', 'part no', 'pn'), iPr = col('harga', 'price', 'pricelist'), iU = col('satuan', 'unit'), iC = col('kategori', 'category', 'kategori barang')
+    prodImportRows = []
+    for (const r of raw.slice(hi + 1)) {
+      const name = String(r?.[iN] || '').trim(); if (!name) continue
+      const part = iP >= 0 ? String(r[iP] || '').trim() : ''
+      const dup = products.find(x => (x.part && part && x.part.toLowerCase() === part.toLowerCase()) || (x.name || '').toLowerCase() === name.toLowerCase())
+      prodImportRows.push({ name, part, price: iPr >= 0 ? +r[iPr] || 0 : 0, unit: iU >= 0 ? (String(r[iU] || '').trim() || 'unit') : 'unit', category: iC >= 0 ? String(r[iC] || '').trim() : '', dupId: dup?.id || null, include: true })
+    }
+    renderProdImportPreview()
+  } catch (e) { toast('Gagal baca file: ' + e.message, false) }
+}
+function prodImpToggle(i, on) { if (prodImportRows[i]) prodImportRows[i].include = on }
+function cancelImportProd() { prodImportRows = []; const el = document.getElementById('prod-import-preview'); if (el) { el.style.display = 'none'; el.innerHTML = '' } }
+function renderProdImportPreview() {
+  const el = document.getElementById('prod-import-preview'); if (!el) return
+  el.style.display = ''
+  if (!prodImportRows.length) { el.innerHTML = '<div class="empty">Tidak ada produk terbaca.</div>'; return }
+  const nNew = prodImportRows.filter(r => !r.dupId).length
+  el.innerHTML = `
+    <div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:9px;padding:10px 12px;">
+      <div style="font-size:12px;font-weight:600;color:#1e40af;margin-bottom:6px;">📥 Preview Import Produk — ${nNew} baru, ${prodImportRows.length - nNew} update</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button class="bp" style="padding:5px 12px;font-size:11px;" id="btn-confirm-prod-imp" onclick="confirmImportProd()">✅ Import yang Dicentang</button>
+        <button class="bs" style="padding:5px 10px;font-size:11px;" onclick="cancelImportProd()">Batal</button>
+      </div>
+      <div style="max-height:240px;overflow:auto;border:1px solid #dbeafe;border-radius:7px;background:#fff;">
+        <table class="piptbl" style="font-size:10.5px;"><thead><tr><th></th><th>Nama</th><th>Part</th><th style="text-align:right;">Harga</th><th>Status</th></tr></thead>
+        <tbody>${prodImportRows.map((r, i) => `<tr>
+          <td><input type="checkbox"${r.include ? ' checked' : ''} onchange="prodImpToggle(${i},this.checked)"></td>
+          <td>${esc(r.name)}</td><td>${esc(r.part)}</td><td style="text-align:right;">${fmt(r.price)}</td>
+          <td>${r.dupId ? '<span style="color:#d97706;">update</span>' : '<span style="color:#16a34a;font-weight:600;">BARU</span>'}</td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+    </div>`
+}
+async function confirmImportProd() {
+  if (!guardAdmin()) return
+  const chosen = prodImportRows.filter(r => r.include)
+  if (!chosen.length) { toast('Tidak ada baris dicentang', false); return }
+  const btn = document.getElementById('btn-confirm-prod-imp')
+  if (btn) { btn.disabled = true; btn.textContent = 'Mengimport…' }
+  let ok = 0, fail = 0
+  for (const r of chosen) {
+    try {
+      const payload = { name: r.name, part: r.part, price: r.price, unit: r.unit, category: r.category, ...(r.dupId ? { id: r.dupId } : {}) }
+      const p = await upsertProduct(payload)
+      const i = products.findIndex(x => x.id === p.id); if (i >= 0) products[i] = p; else products.unshift(p)
+      ok++
+    } catch (e) { fail++; console.error(r.name, e) }
+  }
+  cancelImportProd(); renderProdList(''); document.getElementById('pc').textContent = products.length
+  toast(`Import produk selesai: ${ok} tersimpan${fail ? `, ${fail} gagal` : ''}`)
 }
 
 // ═══════════ FASE 9: STOCK (murni daftar stock barang) ═══════════
