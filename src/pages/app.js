@@ -523,9 +523,11 @@ export async function renderApp(container, user, logout) {
       <div style="display:flex;gap:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
         <button id="dash-pg1-btn" onclick="dashSwitchPage(1)" style="padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#002060;color:#fff;font-weight:600;">📊 Sales</button>
         <button id="dash-pg2-btn" onclick="dashSwitchPage(2)" style="padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#fff;color:#64748b;">🏗 Project</button>
+        <button id="dash-pg3-btn" onclick="dashSwitchPage(3)" style="padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#fff;color:#64748b;">📈 Analitik</button>
       </div>
     </div>
     <div id="dash-page2" style="display:none;"></div>
+    <div id="dash-page3" style="display:none;"></div>
     <div id="dash-page1">
     <div id="dash-attention"></div>
     <div class="sg" id="dash-stats"></div>
@@ -1283,7 +1285,7 @@ export async function renderApp(container, user, logout) {
     pickImportBom, confirmImportBom, cancelImportBom, bomImpToggle, exportBomXlsx,
     addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
     genStandardTimeline, updMilestoneProgress, updMilestoneDate, updMilestoneDuration, autoScheduleTimeline, exportTimelineXlsx, manageHolidays,
-    dashSwitchPage, renderDashProjects,
+    dashSwitchPage, renderDashProjects, renderAnalytics,
     startEditCust, setEditCustType, cancelEditCust, saveEditCust,
     startEditProd, cancelEditProd, saveEditProd,
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
@@ -3578,16 +3580,93 @@ async function addPrjUpdateRow(pid) {
 let dashPage = 1
 function dashSwitchPage(n) {
   dashPage = n
-  const p1 = document.getElementById('dash-page1'), p2 = document.getElementById('dash-page2')
-  const b1 = document.getElementById('dash-pg1-btn'), b2 = document.getElementById('dash-pg2-btn')
-  if (p1) p1.style.display = n === 1 ? '' : 'none'
-  if (p2) p2.style.display = n === 2 ? '' : 'none'
   const on = 'padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#002060;color:#fff;font-weight:600;'
   const off = 'padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#fff;color:#64748b;'
-  if (b1) b1.style.cssText = n === 1 ? on : off
-  if (b2) b2.style.cssText = n === 2 ? on : off
+  ;[1, 2, 3].forEach(i => {
+    const pg = document.getElementById('dash-page' + i), bt = document.getElementById('dash-pg' + i + '-btn')
+    if (pg) pg.style.display = (i === n || (i === 1 && n === 1)) ? (i === n ? '' : 'none') : 'none'
+    if (bt) bt.style.cssText = i === n ? on : off
+  })
+  const p1 = document.getElementById('dash-page1'); if (p1) p1.style.display = n === 1 ? '' : 'none'
   if (n === 2) renderDashProjects()
+  if (n === 3) renderAnalytics()
 }
+// ── Halaman Analitik (5 grafik, semua dari data yang ada) ──
+async function renderAnalytics() {
+  const el = document.getElementById('dash-page3'); if (!el) return
+  const won = pipeline.filter(h => h.status === 'Closed - Won')
+  const lost = pipeline.filter(h => h.status === 'Closed - Lost')
+  const open = pipeline.filter(h => h.status === 'Open')
+  const nego = pipeline.filter(h => h.status === 'Nego')
+  const hold = pipeline.filter(h => h.status === 'On Hold')
+  const shOpen = shodans.filter(s => s.status === 'Open').length
+  const totalClosed = won.length + lost.length
+  const winRate = totalClosed ? Math.round(won.length / totalClosed * 100) : 0
+  // Funnel
+  const funnel = [
+    ['Inquiry (Shodan)', shOpen + pipeline.length, '#60a5fa'],
+    ['Penawaran', pipeline.length, '#3b82f6'],
+    ['Nego', nego.length + won.length, '#2563eb'],
+    ['Won', won.length, '#1d4ed8'],
+  ]
+  const fmax = Math.max(...funnel.map(f => f[1]), 1)
+  // Weighted forecast
+  const wOpen = open.reduce((s, h) => s + (+h.grand_total || 0), 0) * 0.2
+  const wNego = nego.reduce((s, h) => s + (+h.grand_total || 0), 0) * 0.5
+  const wHold = hold.reduce((s, h) => s + (+h.grand_total || 0), 0) * 0.3
+  const wTotal = wOpen + wNego + wHold
+  const wmax = Math.max(wOpen, wNego, wHold, 1)
+  // Loss reasons
+  const reasons = {}
+  lost.forEach(h => { const r = (h.lost_reason || 'Tidak dicatat').trim(); reasons[r] = (reasons[r] || 0) + 1 })
+  const topReasons = Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  const rmax = Math.max(...topReasons.map(r => r[1]), 1)
+  // Project on-time
+  const finished = projects.filter(p => p.stage === 'Selesai')
+  const onTime = finished.filter(p => !p.due_date || !p.done_date || p.done_date <= p.due_date).length
+  const otRate = finished.length ? Math.round(onTime / finished.length * 100) : (projects.length ? 100 : 0)
+  const atRisk = projects.filter(p => p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date && p.due_date < new Date().toISOString().slice(0, 10)).length
+  // Target attainment (tahun berjalan)
+  const year = new Date().toISOString().slice(0, 4)
+  const sp = salesProfiles()
+  const attain = sp.map(p => {
+    const tgt = targets.filter(t => t.sales_id === p.id && t.period.startsWith(year)).reduce((s, t) => s + (+t.target || 0), 0)
+    const ach = pos.filter(x => x.sales_id === p.id && (x.po_date || '').startsWith(year)).reduce((s, x) => s + (+x.amount || 0), 0)
+    return { name: p.name, tgt, ach, pct: tgt > 0 ? Math.round(ach / tgt * 100) : null }
+  }).filter(a => a.tgt > 0 || a.ach > 0)
+
+  el.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+    <div class="card"><div class="chd">Funnel Konversi</div>
+      ${funnel.map((f, i) => `<div style="margin-bottom:4px;"><div style="height:22px;width:${Math.max(f[1] / fmax * 100, 8)}%;background:${f[2]};border-radius:4px;color:#fff;font-size:9px;display:flex;align-items:center;padding:0 7px;font-weight:600;white-space:nowrap;">${esc(f[0])} · ${f[1]}</div></div>`).join('')}
+      <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Win rate keseluruhan: <b>${winRate}%</b></div>
+    </div>
+    <div class="card"><div class="chd">Forecast Pipeline Berbobot</div>
+      <div style="font-family:'Plus Jakarta Sans';font-size:20px;font-weight:800;color:#002060;">${fmt(wTotal)}</div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:8px;">estimasi nilai tertimbang (Open 20% · Nego 50% · Hold 30%)</div>
+      ${[['Open', wOpen, '#3b82f6'], ['Nego', wNego, '#f59e0b'], ['On Hold', wHold, '#94a3b8']].map(r => `<div style="font-size:10px;margin:4px 0;">${r[0]}<div class="bar"><i style="width:${r[1] / wmax * 100}%;background:${r[2]};"></i></div></div>`).join('')}
+    </div>
+    <div class="card"><div class="chd">Win / Loss</div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:80px;height:80px;border-radius:50%;background:conic-gradient(#16a34a 0 ${winRate}%,#fca5a5 ${winRate}% 100%);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><div style="width:54px;height:54px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;"><b style="font-family:'Plus Jakarta Sans';font-size:15px;color:#16a34a;">${winRate}%</b><span style="font-size:8px;color:#94a3b8;">win</span></div></div>
+        <div style="flex:1;"><div style="font-size:11px;color:#16a34a;font-weight:700;">${won.length} Won</div><div style="font-size:11px;color:#dc2626;font-weight:700;">${lost.length} Lost</div></div>
+      </div>
+      <div style="font-size:10px;font-weight:700;color:#64748b;margin:10px 0 4px;">Alasan kalah:</div>
+      ${topReasons.length ? topReasons.map(r => `<div style="font-size:10px;margin:2px 0;display:flex;align-items:center;gap:6px;"><i style="height:11px;width:${r[1] / rmax * 55}px;background:#f87171;border-radius:3px;display:inline-block;"></i> ${esc(r[0])} (${r[1]})</div>`).join('') : '<div style="font-size:10px;color:#cbd5e1;">Belum ada data — isi alasan saat tandai Lost.</div>'}
+    </div>
+    <div class="card"><div class="chd">Project On-Time</div>
+      <div style="text-align:center;padding:6px 0;"><div style="font-family:'Plus Jakarta Sans';font-size:30px;font-weight:800;color:${otRate >= 80 ? '#16a34a' : otRate >= 50 ? '#d97706' : '#dc2626'};">${otRate}%</div><div style="font-size:10px;color:#94a3b8;">${finished.length} project selesai</div></div>
+      ${atRisk ? `<div style="font-size:11px;color:#dc2626;text-align:center;font-weight:600;">⚠ ${atRisk} project aktif lewat target</div>` : '<div style="font-size:11px;color:#16a34a;text-align:center;">✓ tak ada project telat</div>'}
+    </div>
+    <div class="card" style="grid-column:span 2;"><div class="chd">Pencapaian Target per Sales (${year})</div>
+      ${attain.length ? attain.map(a => `<div style="font-size:11px;margin:7px 0;">
+        <div style="display:flex;justify-content:space-between;"><span><b>${esc(a.name)}</b></span><span style="color:#64748b;">${fmt(a.ach)} / ${fmt(a.tgt)} ${a.pct !== null ? '· ' + a.pct + '%' : ''}</span></div>
+        <div class="bar"><i style="width:${Math.min(a.pct || 0, 100)}%;background:${(a.pct || 0) >= 100 ? '#16a34a' : (a.pct || 0) >= 60 ? '#d97706' : '#dc2626'};"></i></div>
+      </div>`).join('') : '<div style="font-size:11px;color:#94a3b8;">Belum ada target/PO tahun ini.</div>'}
+    </div>
+  </div>`
+}
+
 async function renderDashProjects() {
   const el = document.getElementById('dash-page2'); if (!el) return
   el.innerHTML = '<div class="empty">Memuat progress project…</div>'
