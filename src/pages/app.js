@@ -511,6 +511,7 @@ export async function renderApp(container, user, logout) {
     <div class="ntab" onclick="nav('visit')">📍 Visit</div>
     <div class="ntab" onclick="nav('database')">🗄 Database</div>
     <div class="nright">
+      <button onclick="openCmdK()" title="Pencarian cepat (Ctrl/Cmd + K)" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.85);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:11px;">🔍 <span style="font-family:monospace;font-size:9px;opacity:.7;">⌘K</span></button>
       <span class="user-info" id="user-label" onclick="openProfile()" style="cursor:pointer;" title="Lihat profil">...</span>
       <button class="btn-logout" onclick="doLogout()">Keluar</button>
     </div>
@@ -1244,6 +1245,11 @@ export async function renderApp(container, user, logout) {
   document.addEventListener('click', e => {
     if (!e.target.closest('.ac')) document.getElementById('acdrop').style.display = 'none'
   })
+  // Command palette: Ctrl/Cmd+K
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); openCmdK() }
+    else if (e.key === 'Escape' && document.getElementById('cmdk-ov')?.style.display === 'flex') closeCmdK()
+  })
 
   initPills()
   plSearch()
@@ -1266,7 +1272,7 @@ export async function renderApp(container, user, logout) {
   // Expose globals
   Object.assign(window, {
     nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, aSub, delR, delS, uf, us,
-    setPipView, kbDrag, kbDrop,
+    setPipView, kbDrag, kbDrop, openCmdK, closeCmdK, cmdkRun,
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
     renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
     renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
@@ -4049,6 +4055,87 @@ function mGo(p) { mPg = p; renderM() }
 function mAdd(part, name, price, img) { aItem(name, part, 1, 'unit', price, 0, img || ''); closeModal(); qt('items'); toast(part + ' ditambahkan!') }
 
 // PIPELINE
+// ── Command palette (Cmd-K) ──
+let cmdkItems = [], cmdkSel = 0
+function openCmdK() {
+  let ov = document.getElementById('cmdk-ov')
+  if (!ov) {
+    ov = document.createElement('div')
+    ov.id = 'cmdk-ov'
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:1000;display:none;align-items:flex-start;justify-content:center;padding-top:12vh;'
+    ov.innerHTML = `<div style="width:min(520px,92vw);background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.4);overflow:hidden;" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid #e6ebf2;">
+        <span style="font-size:15px;">🔍</span>
+        <input id="cmdk-in" placeholder="Cari customer, deal, project, PO — atau ketik aksi…" style="flex:1;border:none;outline:none;font-size:14px;font-family:inherit;" autocomplete="off">
+        <span style="font-size:9px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:2px 6px;color:#94a3b8;font-family:monospace;">esc</span>
+      </div>
+      <div id="cmdk-list" style="max-height:52vh;overflow:auto;padding:6px 0;"></div>
+    </div>`
+    ov.onclick = closeCmdK
+    document.body.appendChild(ov)
+    ov.querySelector('#cmdk-in').addEventListener('input', cmdkFilter)
+    ov.querySelector('#cmdk-in').addEventListener('keydown', cmdkKey)
+  }
+  ov.style.display = 'flex'
+  const inp = ov.querySelector('#cmdk-in'); inp.value = ''; inp.focus()
+  cmdkFilter()
+}
+function closeCmdK() { const ov = document.getElementById('cmdk-ov'); if (ov) ov.style.display = 'none' }
+function cmdkFilter() {
+  const q = (document.getElementById('cmdk-in')?.value || '').toLowerCase().trim()
+  const items = []
+  const ACTIONS = [
+    { t: '➕ Buat Quotation baru', a: `nav('quotation')` },
+    { t: '📊 Buka Pipeline', a: `nav('pipeline')` },
+    { t: '🧾 Buka PO', a: `nav('po')` },
+    { t: '🏗 Buka Project', a: `nav('project')` },
+    { t: '📦 Buka Stock', a: `nav('database')`.replace('database', 'stock') },
+    { t: '🗄 Buka Database Customer', a: `nav('database')` },
+    { t: '📈 Buka Analitik', a: `nav('dashboard');setTimeout(()=>dashSwitchPage(3),50)` },
+  ]
+  if (q) {
+    customers.filter(c => (c.company || '').toLowerCase().includes(q) || (c.contact || '').toLowerCase().includes(q)).slice(0, 5)
+      .forEach(c => items.push({ grp: 'Customer', ic: '🏢', t: c.company, sub: c.contact || '', a: `nav('database')` }))
+    pipeline.filter(h => ((h.customer_snapshot?.company || '') + (h.qo_number || '') + (h.title || '')).toLowerCase().includes(q)).slice(0, 5)
+      .forEach(h => items.push({ grp: 'Deal / Pipeline', ic: '📊', t: h.customer_snapshot?.company || h.qo_number || '-', sub: `${h.qo_number || ''} · ${h.status || ''}`, a: `nav('pipeline')` }))
+    projects.filter(p => ((p.name || '') + (p.customer_name || '')).toLowerCase().includes(q)).slice(0, 5)
+      .forEach(p => items.push({ grp: 'Project', ic: '🏗', t: p.name, sub: `${p.customer_name || ''} · ${p.stage}`, a: `nav('project');setTimeout(()=>togglePrjDetail('${p.id}'),60)` }))
+    pos.filter(p => ((p.po_number || '') + (p.customer_name || '') + (p.so_number || '')).toLowerCase().includes(q)).slice(0, 5)
+      .forEach(p => items.push({ grp: 'PO', ic: '🧾', t: p.po_number, sub: `${p.customer_name || ''} · ${fmt(+p.amount || 0)}`, a: `nav('po')` }))
+    ACTIONS.filter(x => x.t.toLowerCase().includes(q)).forEach(x => items.push({ grp: 'Aksi', ic: '⚡', t: x.t, a: x.a }))
+  } else {
+    ACTIONS.forEach(x => items.push({ grp: 'Aksi cepat', ic: '⚡', t: x.t, a: x.a }))
+  }
+  cmdkItems = items; cmdkSel = 0
+  const list = document.getElementById('cmdk-list'); if (!list) return
+  if (!items.length) { list.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;font-size:12px;">Tidak ada hasil</div>'; return }
+  let lastGrp = ''
+  list.innerHTML = items.map((it, i) => {
+    const head = it.grp !== lastGrp ? `<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;padding:8px 16px 3px;">${it.grp}</div>` : ''
+    lastGrp = it.grp
+    return head + `<div class="cmdk-row" data-i="${i}" onclick="cmdkRun(${i})" style="display:flex;align-items:center;gap:10px;padding:8px 16px;font-size:12.5px;cursor:pointer;background:${i === 0 ? '#eff6ff' : '#fff'};">
+      <span style="width:22px;height:22px;border-radius:6px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:12px;">${it.ic}</span>
+      <span style="flex:1;">${esc(it.t)}${it.sub ? `<span style="color:#94a3b8;font-size:10px;"> — ${esc(it.sub)}</span>` : ''}</span>
+    </div>`
+  }).join('')
+}
+function cmdkKey(e) {
+  if (e.key === 'ArrowDown') { e.preventDefault(); cmdkMove(1) }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); cmdkMove(-1) }
+  else if (e.key === 'Enter') { e.preventDefault(); cmdkRun(cmdkSel) }
+}
+function cmdkMove(d) {
+  const rows = [...document.querySelectorAll('.cmdk-row')]; if (!rows.length) return
+  cmdkSel = (cmdkSel + d + cmdkItems.length) % cmdkItems.length
+  rows.forEach((r, i) => r.style.background = +r.dataset.i === cmdkSel ? '#eff6ff' : '#fff')
+  const active = rows.find(r => +r.dataset.i === cmdkSel); if (active) active.scrollIntoView({ block: 'nearest' })
+}
+function cmdkRun(i) {
+  const it = cmdkItems[i]; if (!it) return
+  closeCmdK()
+  try { new Function(it.a)() } catch (e) { console.error(e) }
+}
+
 // ── Kanban pipeline board ──
 let pipView = 'list'
 function setPipView(v) {
