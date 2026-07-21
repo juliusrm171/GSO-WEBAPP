@@ -26,15 +26,19 @@ async function init() {
   }
 
   supabase.auth.onAuthStateChange((event, session) => {
-    // Ignore SIGNED_IN events that are actually part of a recovery flow —
-    // the login page's own handler manages the new-password form for those.
+    // PENTING: Supabase memicu SIGNED_IN / TOKEN_REFRESHED setiap kali tab kembali fokus
+    // atau token diperbarui. JANGAN render ulang aplikasi untuk itu — kalau tidak,
+    // seluruh UI dibangun ulang dan balik ke Dashboard (form quotation yang belum
+    // disimpan hilang). Hanya render ulang bila BENAR-BENAR ganti akun (user id beda).
     if (event === 'SIGNED_IN' && session && !isRecoveryFlow()) {
+      if (currentUser && currentUser.id === session.user.id) return // tab refocus / token refresh → abaikan
       currentUser = session.user
       renderApp(document.getElementById('app'), currentUser, logout)
     } else if (event === 'SIGNED_OUT') {
       currentUser = null
       renderLogin(document.getElementById('app'), onLogin)
     }
+    // TOKEN_REFRESHED, USER_UPDATED, dll sengaja diabaikan agar tidak reset UI.
   })
 }
 
