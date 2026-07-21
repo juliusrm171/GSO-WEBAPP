@@ -806,7 +806,12 @@ export async function renderApp(container, user, logout) {
   <!-- PIPELINE -->
   <div id="p-pipeline" class="page">
     <div class="sg" id="sg"></div>
-    <div class="card">
+    <div style="display:flex;gap:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;width:fit-content;margin-bottom:10px;">
+      <button id="pip-view-list" onclick="setPipView('list')" style="padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#002060;color:#fff;font-weight:600;">☰ Daftar</button>
+      <button id="pip-view-board" onclick="setPipView('board')" style="padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#fff;color:#64748b;">▦ Papan Kanban</button>
+    </div>
+    <div id="pip-kanban" style="display:none;"></div>
+    <div class="card" id="pip-list-card">
       <div style="display:flex;gap:7px;margin-bottom:.7rem;flex-wrap:wrap;">
         <input id="pip-q" placeholder="Cari QO number, customer, deskripsi..." style="flex:1;padding:7px 10px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" oninput="renderPip()">
         <select id="pip-f" style="padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12px;" onchange="renderPip()">
@@ -1259,6 +1264,7 @@ export async function renderApp(container, user, logout) {
   // Expose globals
   Object.assign(window, {
     nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, aSub, delR, delS, uf, us,
+    setPipView, kbDrag, kbDrop,
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
     renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
     renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
@@ -3964,6 +3970,68 @@ function mGo(p) { mPg = p; renderM() }
 function mAdd(part, name, price, img) { aItem(name, part, 1, 'unit', price, 0, img || ''); closeModal(); qt('items'); toast(part + ' ditambahkan!') }
 
 // PIPELINE
+// ── Kanban pipeline board ──
+let pipView = 'list'
+function setPipView(v) {
+  pipView = v
+  const lc = document.getElementById('pip-list-card'), kb = document.getElementById('pip-kanban')
+  const fu = document.getElementById('fu-alert-card')
+  if (lc) lc.style.display = v === 'list' ? '' : 'none'
+  if (kb) kb.style.display = v === 'board' ? '' : 'none'
+  if (fu) fu.style.display = v === 'board' ? 'none' : fu.style.display
+  const bl = document.getElementById('pip-view-list'), bb = document.getElementById('pip-view-board')
+  const on = 'padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#002060;color:#fff;font-weight:600;'
+  const off = 'padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:#fff;color:#64748b;'
+  if (bl) bl.style.cssText = v === 'list' ? on : off
+  if (bb) bb.style.cssText = v === 'board' ? on : off
+  renderPip()
+}
+const KB_STAGES = ['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost']
+const KB_COLOR = { 'Open': '#3b82f6', 'Nego': '#f59e0b', 'On Hold': '#94a3b8', 'Closed - Won': '#16a34a', 'Closed - Lost': '#dc2626' }
+function renderKanban(items) {
+  const el = document.getElementById('pip-kanban'); if (!el) return
+  const cols = {}; KB_STAGES.forEach(s => cols[s] = [])
+  items.forEach(h => { const s = KB_STAGES.includes(h.status) ? h.status : 'Open'; cols[s].push(h) })
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;align-items:start;">
+    ${KB_STAGES.map(s => {
+      const list = cols[s]
+      const total = list.reduce((sum, h) => sum + (+h.grand_total || 0), 0)
+      return `<div class="kb-col" data-stage="${s}" ondragover="event.preventDefault();this.style.background='#eef4ff'" ondragleave="this.style.background='#f7f9fc'" ondrop="kbDrop(event,'${s}')" style="background:#f7f9fc;border:1px solid #e6ebf2;border-radius:10px;padding:8px;min-height:80px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:8px;color:${KB_COLOR[s]};">
+          <span>${s} <span style="color:#94a3b8;">· ${list.length}</span></span>
+          <span style="font-size:9px;color:#94a3b8;font-weight:600;">${fmtShort(total)}</span>
+        </div>
+        ${list.map(h => {
+          const isSh = h._shodan
+          const name = esc(h.customer_snapshot?.company || h.customer_name || h.title || h.qo_number || '-')
+          const age = fuAge(h.last_fu || h.date || h.created_at)
+          const rot = !['Closed - Won', 'Closed - Lost'].includes(s) && age > 14 && age <= 90
+          const canDrag = isAdmin() || (myRole === 'sales' && h.created_by === currentUser?.id)
+          return `<div class="kb-card"${canDrag && !isSh ? ` draggable="true" ondragstart="kbDrag(event,'${h.id}')"` : ''} style="background:#fff;border:1px solid ${rot ? '#fca5a5' : '#e6ebf2'};${rot ? 'box-shadow:0 0 0 1px #fecaca;' : ''}border-radius:9px;padding:8px;margin-bottom:7px;${canDrag && !isSh ? 'cursor:grab;' : ''}">
+            <div style="font-size:11px;font-weight:700;margin-bottom:2px;">${name}${isSh ? ' <span style="font-size:8px;color:#92400e;background:#fef3c7;padding:0 5px;border-radius:8px;">shodan</span>' : ''}</div>
+            <div style="font-size:10.5px;color:#002060;font-weight:700;">${fmt(+h.grand_total || +h.est_value || 0)}</div>
+            <div style="font-size:9px;color:#94a3b8;margin-top:5px;display:flex;align-items:center;gap:5px;">
+              <span>${esc((h.profiles?.name || h.sales_name || '-').split(' ')[0])}</span>
+              ${rot ? `<span style="font-size:8px;font-weight:700;color:#dc2626;background:#fef2f2;padding:0 6px;border-radius:8px;">● rotting ${age}h</span>` : (h.qo_number ? `<span>${esc(h.qo_number)}</span>` : '')}
+            </div>
+          </div>`
+        }).join('') || '<div style="font-size:10px;color:#cbd5e1;text-align:center;padding:8px;">—</div>'}
+      </div>`
+    }).join('')}
+  </div>
+  <div style="font-size:10px;color:#94a3b8;margin-top:8px;">Seret kartu antar kolom untuk ubah status. Kartu merah = rotting (tanpa update 14–90 hari). Shodan tidak bisa diseret (ubah dari tab Shodan).</div>`
+}
+let kbDragId = null
+function kbDrag(e, id) { kbDragId = id; e.dataTransfer.effectAllowed = 'move' }
+async function kbDrop(e, stage) {
+  e.preventDefault()
+  const col = e.currentTarget; if (col) col.style.background = '#f7f9fc'
+  if (!kbDragId) return
+  const id = kbDragId; kbDragId = null
+  const h = pipeline.find(x => x.id === id); if (!h || h.status === stage) return
+  await updS(id, stage) // updS sudah handle Lost-reason & permission
+}
+
 function renderPip() {
   // Populate sales filter dropdown dynamically with unique sales names
   const salesSelect = document.getElementById('pip-sales')
@@ -4007,6 +4075,13 @@ function renderPip() {
 
   const sg = document.getElementById('sg')
   if (sg) sg.innerHTML = Object.entries(stats).map(([s, n]) => `<div class="sc"><div class="sn">${n}</div><div class="sl">${s}</div><div class="sv">${fmtShort(vals[s] || 0)}</div></div>`).join('')
+
+  // Mode papan Kanban: gabungkan pipeline + shodan (ditandai) lalu render board, lewati tabel
+  if (pipView === 'board') {
+    const kbItems = [...filtered, ...shFiltered.map(s => ({ ...s, _shodan: true, status: SH_MAP[s.status] || 'Open', grand_total: +s.est_value || 0 }))]
+    renderKanban(kbItems)
+    return
+  }
 
   const bd = document.getElementById('pip-bd'); if (!bd) return
 
