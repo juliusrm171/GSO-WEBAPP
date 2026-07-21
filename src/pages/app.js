@@ -1272,7 +1272,8 @@ export async function renderApp(container, user, logout) {
     smPartChange, saveStockItemManual, updStockQty, renderStock, delStockItem, loadStock,
     pickImportStock, confirmImportStock, cancelImportStock, stockImpToggle, exportStockXlsx,
     togglePrjForm, savePrj, renderPrjList, togglePrjDetail, updPrjStage, delPrj, loadProjectsData,
-    addBomRow, updBomStatusBarang, delBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
+    addBomRow, updBomStatusBarang, delBom, startEditBom, cancelEditBom, saveEditBom, addPrjTaskRow, togglePrjTask, delPrjTask, uploadPrjFile, pickUpdPhoto, addPrjUpdateRow, renderEngineerDash,
+    pickMilestonePhoto, renderCockpit, saveCockpit,
     pickImportBom, confirmImportBom, cancelImportBom, bomImpToggle, exportBomXlsx,
     addMilestoneRow, toggleMilestone, delMilestone, pickRepPhoto, addPrjReport,
     genStandardTimeline, updMilestoneProgress, updMilestoneDate, updMilestoneDuration, autoScheduleTimeline, exportTimelineXlsx, manageHolidays,
@@ -2731,6 +2732,60 @@ async function togglePrjDetail(id) {
   try { prjChildren = await getProjectChildren(id); renderPrjList() }
   catch (e) { toast('Gagal muat detail: ' + e.message, false) }
 }
+// ── PROJECT COCKPIT — Budget & Margin per project (mirip header Bomlist GSO) ──
+// Hanya untuk yang boleh lihat harga (bukan engineer).
+function renderCockpit(p, boms, milestones, po) {
+  if (!canQuote()) return '' // engineer tidak lihat angka uang
+  const jual = +p.harga_jual || 0
+  const bJasa = +p.budget_jasa || 0, bPart = +p.budget_part || 0, bOther = +p.budget_other || 0
+  const budget = bJasa + bPart + bOther
+  const margin = jual - budget
+  const marginPct = jual > 0 ? Math.round(margin / jual * 1000) / 10 : 0
+  // Biaya nyata dari BOM (harga real per item)
+  const bomReal = boms.reduce((s, b) => s + (+b.total || (+b.price || 0) * (+b.qty || 0)), 0)
+  const poReal = po ? (+po.amount || 0) : 0
+  const actual = bomReal || poReal // pakai BOM kalau ada, else PO
+  const marginReal = jual - actual
+  const marginRealPct = jual > 0 ? Math.round(marginReal / jual * 1000) / 10 : 0
+  const totProg = milestones.length ? Math.round(milestones.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / milestones.length) : 0
+  const today = new Date().toISOString().slice(0, 10)
+  const daysLeft = p.due_date ? Math.ceil((new Date(p.due_date) - new Date(today)) / 86400000) : null
+  const overBudget = actual > budget && budget > 0
+  const bi = (id, val, label) => `<div class="fld" style="gap:2px;"><label style="font-size:9px;">${label}</label><input id="ck-${id}" type="number" value="${val || ''}" placeholder="0" onchange="saveCockpit('${p.id}')" style="padding:4px 7px;font-size:11px;text-align:right;"></div>`
+  const tile = (accent, label, big, sub) => `<div class="kpi" style="--sc-accent:${accent};background:#fff;border:1px solid #e6ebf2;border-radius:11px;padding:10px 12px;position:relative;overflow:hidden;"><div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:${accent};"></div><div style="font-size:9px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:#94a3b8;">${label}</div><div style="font-family:'Plus Jakarta Sans';font-size:15px;font-weight:800;margin-top:3px;">${big}</div><div style="font-size:10px;color:#64748b;margin-top:1px;">${sub}</div></div>`
+  return `
+  <div style="border:1px solid #dbeafe;background:#f8fbff;border-radius:11px;padding:11px 12px;margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:8px;display:flex;align-items:center;gap:6px;">💼 COCKPIT — Budget & Margin ${overBudget ? '<span style="font-size:9px;font-weight:700;color:#b91c1c;background:#fef2f2;padding:1px 7px;border-radius:10px;">⚠ Over budget</span>' : ''}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px;">
+      ${tile('#059669', 'Harga Jual', fmt(jual), quoOf(p) ? 'dari ' + quoOf(p).qo_number : 'input manual')}
+      ${tile('#d97706', 'Budget (rencana)', fmt(budget), `jasa ${fmtShort(bJasa)} + part ${fmtShort(bPart)} + tak terduga ${fmtShort(bOther)}`)}
+      ${tile('#2563eb', 'Margin (rencana)', fmt(margin), marginPct + '% dari harga jual')}
+      ${tile(overBudget ? '#dc2626' : '#0891b2', 'Biaya Nyata', fmt(actual), bomReal ? 'dari BOM real' : (poReal ? 'dari PO' : 'belum ada'))}
+      ${tile(marginReal < margin ? '#dc2626' : '#16a34a', 'Margin Real', fmt(marginReal), marginRealPct + '% ' + (marginReal < margin ? '▼ turun' : '✓'))}
+      ${tile('#002060', 'Progress', totProg + '%', daysLeft !== null ? (daysLeft < 0 ? `telat ${-daysLeft} hari` : `sisa ${daysLeft} hari`) : 'jadwal belum di-set')}
+    </div>
+    ${isAdmin() ? `<details style="font-size:11px;"><summary style="cursor:pointer;color:#2563eb;font-weight:600;">✏️ Edit budget & harga jual</summary>
+      <div class="g4" style="margin-top:8px;">
+        ${bi('jual', jual, 'Harga Jual (Rp)')}
+        ${bi('jasa', bJasa, 'Budget Jasa')}
+        ${bi('part', bPart, 'Budget Part')}
+        ${bi('other', bOther, 'Budget Tak Terduga')}
+      </div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:5px;">Biaya Nyata & Margin Real dihitung otomatis dari total BOM (harga real per item). Isi harga di tiap item BOM agar akurat.</div>
+    </details>` : ''}
+  </div>`
+}
+const quoOf = p => p.quotation_id ? pipeline.find(h => h.id === p.quotation_id) : null
+async function saveCockpit(pid) {
+  if (!guardAdmin()) return
+  const g = k => { const v = document.getElementById('ck-' + k)?.value; return v === '' || v === undefined ? null : +v }
+  try {
+    const up = await updateProject(pid, { harga_jual: g('jual'), budget_jasa: g('jasa'), budget_part: g('part'), budget_other: g('other') })
+    const i = projects.findIndex(x => x.id === pid); if (i >= 0) projects[i] = up
+    renderPrjList(); toast('Budget & margin diperbarui')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
 function renderPrjDetail(p) {
   if (!prjChildren) return '<div class="empty">Memuat detail…</div>'
   const { tasks, boms, files, updates } = prjChildren
@@ -2752,6 +2807,8 @@ function renderPrjDetail(p) {
       ${quo ? `📄 ${quo.qo_number}` : ''} ${po ? ` · 🧾 ${po.po_number}` : ''} ${p.start_date ? ` · mulai ${fmtD(p.start_date)}` : ''}${p.due_date ? ` · target selesai <b style="color:${p.due_date < today && p.stage !== 'Selesai' ? '#dc2626' : '#002060'};">${fmtD(p.due_date)}</b>` : ''}
     </div>
 
+    ${renderCockpit(p, boms, milestones, po)}
+
     ${(() => {
       const totProg = milestones.length ? Math.round(milestones.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / milestones.length) : 0
       return `<div style="display:flex;align-items:center;gap:8px;margin:0 0 5px;flex-wrap:wrap;">
@@ -2767,13 +2824,17 @@ function renderPrjDetail(p) {
     ${milestones.map(m => {
       const late = !m.done && m.target_date && m.target_date < today
       const prog = m.done ? 100 : (+m.progress || 0)
+      const hasPhoto = !!m.photo_url
       return `<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;flex-wrap:wrap;">
-        <input type="checkbox"${m.done ? ' checked' : ''} onchange="toggleMilestone('${m.id}',this.checked)">
+        <input type="checkbox"${m.done ? ' checked' : ''} onchange="toggleMilestone('${m.id}',this.checked,${hasPhoto})" title="${hasPhoto ? 'Centang bila selesai' : 'Wajib upload foto bukti dulu sebelum bisa dicentang selesai'}">
         <div style="flex:1;min-width:130px;${m.done ? 'text-decoration:line-through;color:#94a3b8;' : ''}">${m.sort ? m.sort + '. ' : ''}${esc(m.title)}</div>
         <div style="display:flex;align-items:center;gap:4px;">
           <div class="bar-track" style="width:70px;"><div style="position:absolute;left:0;top:0;bottom:0;width:${prog}%;background:${prog >= 100 ? '#16a34a' : late ? '#dc2626' : '#3b82f6'};border-radius:9px;"></div></div>
           <input type="number" value="${prog}" min="0" max="100" onchange="updMilestoneProgress('${m.id}',this.value)" style="width:46px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;"${m.done ? ' disabled' : ''}>%
         </div>
+        ${hasPhoto
+          ? `<a href="${m.photo_url}" target="_blank" title="Foto bukti"><img src="${m.photo_url}" style="width:24px;height:24px;object-fit:cover;border-radius:5px;border:1px solid #86efac;"></a>`
+          : `<button class="bxs" style="border-color:#f59e0b;color:#b45309;padding:1px 6px;font-size:9px;" onclick="pickMilestonePhoto('${p.id}','${m.id}')" title="Upload foto bukti pengerjaan">📷 Bukti</button>`}
         ${isAdmin() ? `<span style="display:inline-flex;align-items:center;gap:2px;font-size:10px;color:#64748b;" title="Durasi dalam hari kerja (Senin–Sabtu, lewati Minggu & libur nasional)">⏱<input type="number" value="${m.duration_days || ''}" min="1" placeholder="hk" onchange="updMilestoneDuration('${m.id}',this.value)" style="width:40px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;font-size:10px;text-align:right;">hk</span>`
         : (m.duration_days ? `<span style="font-size:10px;color:#64748b;">⏱ ${m.duration_days} hr</span>` : '')}
         ${isAdmin() ? `<input type="date" value="${m.target_date || ''}" onchange="updMilestoneDate('${m.id}',this.value)" title="Target/deadline tahap ini" style="padding:2px 5px;border:1px solid ${late ? '#fca5a5' : '#e2e8f0'};border-radius:5px;font-size:10px;background:${late ? '#fef2f2' : '#fff'};">`
@@ -3099,13 +3160,40 @@ async function addMilestoneRow(pid) {
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
-async function toggleMilestone(id, done) {
+async function toggleMilestone(id, done, hasPhoto) {
+  // Wajib ada foto bukti sebelum tahap boleh ditandai selesai
+  if (done && !hasPhoto) {
+    toast('Upload foto bukti dulu (tombol 📷 Bukti) sebelum tahap bisa ditandai selesai', false)
+    renderPrjList() // kembalikan checkbox
+    return
+  }
   try {
     const m = await updateProjectMilestone(id, { done, done_date: done ? new Date().toISOString().slice(0, 10) : null, ...(done ? { progress: 100 } : {}) })
     if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
     try { overdueMs = await getOverdueMilestones() } catch (e) {}
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+function pickMilestonePhoto(pid, mid) {
+  let inp = document.getElementById('ms-photo-input')
+  if (!inp) {
+    inp = document.createElement('input')
+    inp.type = 'file'; inp.id = 'ms-photo-input'; inp.accept = 'image/*'; inp.capture = 'environment'; inp.style.display = 'none'
+    document.body.appendChild(inp)
+  }
+  inp.onchange = async () => {
+    const f = inp.files[0]; inp.value = ''
+    if (!f) return
+    if (f.size > 15 * 1024 * 1024) { toast('Maksimal 15 MB', false); return }
+    toast('Meng-upload foto bukti…')
+    try {
+      const att = await uploadAttachment(f, 'projects/' + pid + '/milestones')
+      const m = await updateProjectMilestone(mid, { photo_url: att.url })
+      if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === mid); if (i >= 0) prjChildren.milestones[i] = m }
+      renderPrjList(); toast('Foto bukti tersimpan — tahap sekarang bisa dicentang selesai ✓')
+    } catch (e) { toast('Gagal upload: ' + e.message, false) }
+  }
+  inp.click()
 }
 async function delMilestone(id) {
   if (!guardAdmin()) return
@@ -3182,7 +3270,7 @@ function renderBomTable(boms) {
     <tbody>
     ${groups.map(g => `
       <tr><td colspan="${showMoney ? 8 : 6}" style="background:#f1f5f9;font-weight:700;color:#002060;font-size:10.5px;">${esc(g.name)}${showMoney ? ` — ${fmt(g.items.reduce((s, b) => s + (+b.total || (+b.price || 0) * (+b.qty || 0)), 0))}` : ''}</td></tr>
-      ${g.items.map(b => `<tr>
+      ${g.items.map(b => editingBomId === b.id ? renderBomEditRow(b, showMoney) : `<tr>
         <td>${isAdmin() ? `<select onchange="updBomStatusBarang('${b.id}',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;color:${stColor(b.status_barang)};font-weight:600;">
           ${BOM_STATUSES.map(s => `<option value="${s}"${(b.status_barang || '') === s ? ' selected' : ''}>${s || '—'}</option>`).join('')}
         </select>` : `<span style="color:${stColor(b.status_barang)};font-weight:600;font-size:10px;">${b.status_barang || '—'}</span>`}</td>
@@ -3192,10 +3280,43 @@ function renderBomTable(boms) {
         <td style="text-align:right;">${+b.qty}</td>
         ${showMoney ? `<td style="text-align:right;white-space:nowrap;">${b.price ? fmt(+b.price) : '-'}</td>
         <td style="text-align:right;white-space:nowrap;font-weight:600;">${fmt(+b.total || (+b.price || 0) * (+b.qty || 0))}</td>` : ''}
-        <td>${isAdmin() ? `<button class="bdel" style="font-size:10px;" onclick="delBom('${b.id}')">✕</button>` : ''}</td>
+        <td style="white-space:nowrap;">${isAdmin() ? `<button class="bxs" style="font-size:9px;padding:1px 5px;border-color:#fbbf24;color:#92400e;" onclick="startEditBom('${b.id}')">✏️</button> <button class="bdel" style="font-size:10px;" onclick="delBom('${b.id}')">✕</button>` : ''}</td>
       </tr>`).join('')}`).join('')}
     ${showMoney ? `<tr><td colspan="6" style="text-align:right;font-weight:700;">GRAND TOTAL</td><td style="text-align:right;font-weight:700;color:#002060;white-space:nowrap;">${fmt(grand)}</td><td></td></tr>` : ''}
     </tbody></table></div>`
+}
+// Edit BOM inline (revisi)
+let editingBomId = null
+function startEditBom(id) { editingBomId = id; renderPrjList() }
+function cancelEditBom() { editingBomId = null; renderPrjList() }
+function renderBomEditRow(b, showMoney) {
+  const iv = (id, val, w, ph = '', num = false) => `<input id="eb-${id}" value="${escA(val ?? '')}"${num ? ' type="number"' : ''} placeholder="${ph}" style="width:${w};padding:2px 4px;border:1px solid #93c5fd;border-radius:4px;font-size:10px;${num ? 'text-align:right;' : ''}">`
+  return `<tr style="background:#eff6ff;">
+    <td>${iv('status', b.status_barang || '', '58px', 'status')}</td>
+    <td>${iv('brand', b.brand || '', '60px', 'brand')}</td>
+    <td>${iv('pn', b.part_number || '', '90px', 'PN')}</td>
+    <td>${iv('name', b.part_name || b.description || '', '96%', 'nama')}</td>
+    <td>${iv('qty', b.qty ?? 1, '46px', '', true)}</td>
+    ${showMoney ? `<td>${iv('price', b.price ?? '', '80px', 'harga', true)}</td><td style="font-size:9px;color:#94a3b8;text-align:center;">auto</td>` : ''}
+    <td style="white-space:nowrap;"><button class="bxs" style="font-size:9px;padding:1px 5px;border-color:#16a34a;color:#166534;" onclick="saveEditBom('${b.id}')">✓</button> <button class="bxs" style="font-size:9px;padding:1px 5px;" onclick="cancelEditBom()">✕</button></td>
+  </tr>`
+}
+async function saveEditBom(id) {
+  if (!guardAdmin()) return
+  const g = k => document.getElementById('eb-' + k)?.value
+  const qty = +(g('qty') || 0), price = g('price') !== undefined && g('price') !== '' ? +g('price') : null
+  try {
+    const fields = {
+      status_barang: (g('status') || '').toUpperCase().trim() || null,
+      brand: g('brand')?.trim() || null,
+      part_number: g('pn')?.trim() || null,
+      part_name: g('name')?.trim() || null, description: g('name')?.trim() || null,
+      qty, price, total: price != null ? price * qty : null
+    }
+    const b = await updateProjectBom(id, fields)
+    if (prjChildren) { const i = prjChildren.boms.findIndex(x => x.id === id); if (i >= 0) prjChildren.boms[i] = b }
+    editingBomId = null; renderPrjList(); toast('BOM item diperbarui')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 async function addBomRow(pid) {
   const part = document.getElementById('bom-part')?.value.trim(), desc = document.getElementById('bom-desc')?.value.trim()
