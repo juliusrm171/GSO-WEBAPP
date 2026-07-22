@@ -1281,7 +1281,7 @@ export async function renderApp(container, user, logout) {
   // Expose globals
   Object.assign(window, {
     nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, aSub, delR, delS, uf, us,
-    setPipView, kbDrag, kbDrop, openCmdK, closeCmdK, cmdkRun,
+    setPipView, kbDrag, kbDrop, openCmdK, closeCmdK, cmdkRun, focusPip,
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
     renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
     renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
@@ -4526,7 +4526,7 @@ function renderPip() {
       const vList = visitsOf('shodan', s.id)
       const vBtn = vList.length ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="togglePipVisits('s:${s.id}')">📍 ${vList.length} visit</button>` : ''
       const expanded = expandedPipRow === 's:' + s.id ? visitReportRow(vList) : ''
-      return `<tr style="background:#fffbeb;">
+      return `<tr id="piprow-s:${s.id}" style="background:#fffbeb;">
         <td style="white-space:nowrap;"><span class="badge" style="background:#fef3c7;color:#92400e;">SHODAN</span>${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
         <td style="white-space:nowrap;font-size:10px;">${s.created_at ? new Date(s.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
         <td style="font-size:11px;color:#64748b;">${s.profiles?.name || '-'}</td>
@@ -4545,7 +4545,7 @@ function renderPip() {
     const vList = visitsOf('pipeline', h.id)
     const vBtn = vList.length ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="togglePipVisits('q:${h.id}')">📍 ${vList.length} visit</button>` : ''
     const expanded = expandedPipRow === 'q:' + h.id ? visitReportRow(vList) : ''
-    return `<tr>
+    return `<tr id="piprow-q:${h.id}">
       <td style="font-weight:600;white-space:nowrap;">${h.qo_number || '-'}${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${h.date ? new Date(h.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
       <td style="font-size:11px;color:#64748b;">${salesName}</td>
@@ -4650,22 +4650,41 @@ function renderFuAlerts() {
   const items = []
   pipeline.filter(h => ['Open', 'Nego', 'On Hold'].includes(h.status)).forEach(h => {
     const age = fuAge(h.last_fu || h.date || h.created_at)
-    if (age > LIMIT) items.push({ tipe: 'Pipeline', label: (h.qo_number || '-') + ' · ' + (h.customer_snapshot?.company || '-'), sales: h.profiles?.name || h.sales_name || '-', age })
+    if (age > LIMIT) items.push({ tipe: 'Pipeline', key: 'q:' + h.id, label: (h.qo_number || '-') + ' · ' + (h.customer_snapshot?.company || '-'), sales: h.profiles?.name || h.sales_name || '-', age })
   })
   shodans.filter(s => s.status === 'Open').forEach(s => {
     const age = fuAge(s.last_fu || s.created_at)
-    if (age > LIMIT) items.push({ tipe: 'Shodan', label: (s.title || '-') + ' · ' + (s.customer_name || '-'), sales: s.profiles?.name || '-', age })
+    if (age > LIMIT) items.push({ tipe: 'Shodan', key: 's:' + s.id, label: (s.title || '-') + ' · ' + (s.customer_name || '-'), sales: s.profiles?.name || '-', age })
   })
   if (!items.length) { card.style.display = 'none'; return }
   items.sort((a, b) => b.age - a.age)
   card.style.display = 'block'
   list.innerHTML = items.map(i => `
-    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #fef3c7;font-size:12px;">
+    <div onclick="focusPip('${i.key}')" title="Klik untuk buka di daftar pipeline" style="display:flex;align-items:center;gap:8px;padding:6px 6px;border-bottom:1px solid #fef3c7;font-size:12px;cursor:pointer;border-radius:6px;transition:background .12s;" onmouseover="this.style.background='#fffbeb'" onmouseout="this.style.background=''">
       <span class="badge" style="background:${i.tipe === 'Shodan' ? '#fef3c7' : '#e0e7ff'};color:${i.tipe === 'Shodan' ? '#92400e' : '#3730a3'};">${i.tipe}</span>
       <span style="flex:1;">${i.label}</span>
       <span style="color:#64748b;">${i.sales}</span>
       <span style="color:#b45309;font-weight:600;white-space:nowrap;">${i.age === Infinity ? 'belum pernah FU' : i.age + ' hari'}</span>
+      <span style="color:#cbd5e1;font-size:13px;">›</span>
     </div>`).join('')
+}
+
+// Klik baris "Perlu Follow-Up" → bersihkan filter, loncat & sorot baris di daftar pipeline
+function focusPip(key) {
+  const qEl = document.getElementById('pip-q'); if (qEl) qEl.value = ''
+  const fEl = document.getElementById('pip-f'); if (fEl) fEl.value = ''
+  const sEl = document.getElementById('pip-sales'); if (sEl) sEl.value = 'all'
+  if (pipView !== 'list') setPipView('list'); else renderPip()
+  setTimeout(() => {
+    const row = document.getElementById('piprow-' + key)
+    if (!row) return
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const orig = row.style.background
+    row.style.transition = 'background .5s'
+    row.style.background = '#fde68a'
+    row.style.boxShadow = 'inset 0 0 0 2px #f59e0b'
+    setTimeout(() => { row.style.background = orig || ''; row.style.boxShadow = '' }, 2000)
+  }, 90)
 }
 
 // DASHBOARD
