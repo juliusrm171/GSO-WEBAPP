@@ -1338,11 +1338,11 @@ function applyRoleUI() {
   // Engineer tetap bisa lihat shodan di Pipeline, tapi tanpa nominal.
   if (!canQuote()) {
     document.querySelectorAll('nav .ntab').forEach(t => {
-      if (['Quotation', 'Pricelist', 'Shodan', 'PO', 'Visit'].some(x => t.textContent.includes(x))) t.style.display = 'none'
+      if (['Quotation', 'Pricelist', 'Shodan', 'PO', 'Visit', 'Database'].some(x => t.textContent.includes(x))) t.style.display = 'none'
     })
     const sf = document.getElementById('shodan-form-card'); if (sf) sf.style.display = 'none'
-    // Kalau engineer sedang berada di tab Visit (mis. dari URL/state lama), lempar ke dashboard
-    if (myRole === 'engineer' && document.getElementById('p-visit')?.classList.contains('on')) nav('dashboard')
+    // Kalau engineer sedang di tab yang disembunyikan (Visit/Database/dll), lempar ke dashboard
+    if (myRole === 'engineer' && (document.getElementById('p-visit')?.classList.contains('on') || document.getElementById('p-database')?.classList.contains('on'))) nav('dashboard')
   }
 
   // Non-admin: form input PO disembunyikan
