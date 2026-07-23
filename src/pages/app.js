@@ -1361,7 +1361,8 @@ function applyRoleUI() {
   }
   // FASE 13: tab Rapikan Data khusus admin
   const dtClean = document.getElementById('dt-clean'); if (dtClean) dtClean.style.display = isAdmin() ? '' : 'none'
-  // Target perusahaan: hanya admin yang bisa ubah
+  // Target perusahaan: hanya admin yang bisa lihat & ubah — sembunyikan dari sales/engineer
+  const ctCard = document.getElementById('company-target-card'); if (ctCard) ctCard.style.display = isAdmin() ? '' : 'none'
   const ctInp = document.getElementById('company-target'); if (ctInp) ctInp.disabled = !isAdmin()
 
   // FASE 14: created-by quotation ikut akun login — nama sales terisi dari profil dan dikunci untuk role sales
