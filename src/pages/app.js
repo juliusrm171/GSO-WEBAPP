@@ -1,4 +1,4 @@
-import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone, getOverdueMilestones, getAllMilestones } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, deleteQuotation, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone, getOverdueMilestones, getAllMilestones } from '../lib/supabase.js'
 import * as XLSX from 'xlsx'
 import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
 import { generatePDF } from '../lib/pdf.js'
@@ -1310,7 +1310,7 @@ export async function renderApp(container, user, logout) {
     doPDF, doSaveQuo, doLogout: onLogout,
     switchDbTab,
     openProfile, closeProfile, saveMyProfile, chgUserRole, chgUserSales, genQuoNo,
-    updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo,
+    updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo, delQuo,
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
     vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList,
     loadPOs, renderPO, savePO, delPO, renderTargets, saveTargetVal, saveVisitTargetVal,
@@ -4554,7 +4554,7 @@ function renderPip() {
       <td style="color:#64748b;font-size:11px;">${desc || '-'}${(Array.isArray(h.items) && h.items.some(r => r.t === 'i')) ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="previewQuo('${h.id}')">👁 Preview</button>` : ''}${vBtn}</td>
       <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? fmt(h.grand_total) : '-'}</td>
       <td><input type="date" value="${h.last_fu || ''}" onchange="updFU('${h.id}',this.value)" ${(isAdmin() || (myRole === 'sales' && isMe)) ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
-      <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}${h.status === 'Closed - Lost' && h.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${h.lost_reason}</div>` : ''}</td>
+      <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}${h.status === 'Closed - Lost' && h.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${h.lost_reason}</div>` : ''}${isAdmin() ? ` <button class="bdel" style="font-size:10px;" title="Hapus penawaran (admin)" onclick="delQuo('${h.id}')">🗑</button>` : ''}</td>
     </tr>${expanded}`
   }).join('') || `<tr><td colspan="8" class="empty">Tidak ada data.</td></tr>`
 
@@ -5191,6 +5191,19 @@ async function delShodan(id) {
     shodans = shodans.filter(x => x.id !== id)
     renderPip(); toast('Shodan dihapus')
   } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+// Hapus penawaran/pipeline — hanya admin & super admin
+async function delQuo(id) {
+  if (!isAdmin()) { toast('Hanya admin yang bisa menghapus penawaran', false); return }
+  const h = pipeline.find(x => x.id === id)
+  const label = h ? (h.qo_number || h.customer_snapshot?.company || 'ini') : 'ini'
+  if (!confirm(`Hapus penawaran ${label}? Tindakan ini permanen dan tidak bisa dibatalkan.`)) return
+  try {
+    await deleteQuotation(id)
+    pipeline = pipeline.filter(x => x.id !== id)
+    renderPip(); toast('Penawaran dihapus')
+  } catch (e) { toast('Gagal menghapus: ' + e.message, false) }
 }
 
 // Konversi shodan → quotation: prefill form, link setelah disimpan

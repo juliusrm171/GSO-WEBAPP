@@ -288,6 +288,11 @@ export async function updateQuotationStatus(id, status) {
   if (error) throw error
 }
 
+export async function deleteQuotation(id) {
+  const { error } = await supabase.from('quotations').delete().eq('id', id)
+  if (error) throw error
+}
+
 // PROFILES
 export async function getProfiles() {
   const { data, error } = await supabase.from('profiles').select('*').order('name')
