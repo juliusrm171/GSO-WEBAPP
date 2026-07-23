@@ -1282,6 +1282,7 @@ export async function renderApp(container, user, logout) {
   Object.assign(window, {
     nav, qt, acSrch, selC, recalc, aGrp, aItem, aNote, aSub, delR, delS, uf, us,
     setPipView, kbDrag, kbDrop, openCmdK, closeCmdK, cmdkRun, focusPip,
+    previewQuo, closePreviewQuo, previewQuoPDF,
     openModal, closeModal, mSearch, mGo, mAdd, plSearch, plSetCat, plGo, addFromPL, saveStarPL,
     renderPip, updS, expCSV, loadPipeline, loadCustomers, renderDashboard,
     renderVisits, renderVisitList, vCustSearch, vCustPick, saveVisit, delVisit, saveVisitTarget,
@@ -4550,7 +4551,7 @@ function renderPip() {
       <td style="white-space:nowrap;font-size:10px;">${h.date ? new Date(h.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
       <td style="font-size:11px;color:#64748b;">${salesName}</td>
       <td>${esc(cust.company || '-')}</td>
-      <td style="color:#64748b;font-size:11px;">${desc || '-'}${vBtn}</td>
+      <td style="color:#64748b;font-size:11px;">${desc || '-'}${(Array.isArray(h.items) && h.items.some(r => r.t === 'i')) ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="previewQuo('${h.id}')">👁 Preview</button>` : ''}${vBtn}</td>
       <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? fmt(h.grand_total) : '-'}</td>
       <td><input type="date" value="${h.last_fu || ''}" onchange="updFU('${h.id}',this.value)" ${(isAdmin() || (myRole === 'sales' && isMe)) ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
       <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}${h.status === 'Closed - Lost' && h.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${h.lost_reason}</div>` : ''}</td>
@@ -4566,6 +4567,118 @@ let expandedPipRow = null
 function togglePipVisits(key) {
   expandedPipRow = expandedPipRow === key ? null : key
   renderPip()
+}
+
+// Preview isi quotation dari sebuah pipeline (read-only) — supaya bisa lihat apa yang ditawarkan
+function previewQuo(id) {
+  const h = pipeline.find(x => x.id === id)
+  if (!h) { toast('Data quotation tidak ditemukan', false); return }
+  const items = Array.isArray(h.items) ? h.items : []
+  const cust = h.customer_snapshot || {}
+  const dp = +h.discount_pct || 0, vp = h.vat_pct != null ? +h.vat_pct : 12
+  const tot = items.filter(r => r.t === 'i').reduce((s, r) => s + calcR(r), 0)
+  const da = tot * dp / 100, sub = tot - da, vat = sub * vp / 100, grand = sub + vat
+  const gInfo = computeGroups(items)
+  let nc = 0
+  const R = 'text-align:right;'
+  const bodyRows = items.map(r => {
+    if (r.t === 'g') return `<tr style="background:#f1f5f9;font-weight:700;color:#002060;"><td colspan="6" style="padding:5px 7px;">${esc(r.label || '')}</td><td style="${R}padding:5px 7px;">${fmt(gInfo.sums[r.id] || 0)}</td></tr>`
+    if (r.t === 'n') return `<tr><td colspan="7" style="color:#888;font-size:11px;padding:4px 7px;">${esc(r.text || '').replace(/\n/g, '<br>')}</td></tr>`
+    nc++
+    const subs = (r.subs || []).map((s, si) => `<tr><td style="${R}color:#aaa;padding:3px 7px;">${nc}.${si + 1}</td><td></td><td colspan="5" style="padding:3px 7px;font-size:11px;color:#64748b;">${esc(s.text || '')}</td></tr>`).join('')
+    const pvImg = r.img ? `<div><img src="${imgSrc(r.img)}" onerror="this.style.display='none'" style="height:34px;margin-top:3px;"></div>` : ''
+    const inG = gInfo.inGroup.has(r.id)
+    return `<tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:5px 7px;">${nc}</td>
+      <td style="padding:5px 7px;font-size:10px;color:#64748b;">${esc(r.part || '')}</td>
+      <td style="padding:5px 7px;font-weight:500;">${esc(r.name || '')}${pvImg}</td>
+      <td style="${R}padding:5px 7px;">${r.qty}${r.unit ? ' ' + esc(r.unit) : ''}</td>
+      <td style="${R}padding:5px 7px;">${inG ? '' : fmt(r.price || 0)}</td>
+      <td style="${R}padding:5px 7px;">${inG ? '' : (r.disc ? r.disc + '%' : '-')}</td>
+      <td style="${R}padding:5px 7px;font-weight:600;">${inG ? '' : fmt(calcR(r))}</td>
+    </tr>${subs}`
+  }).join('') || `<tr><td colspan="7" style="text-align:center;color:#aaa;padding:10px;">Belum ada item</td></tr>`
+
+  const ov = document.createElement('div')
+  ov.id = 'quo-prev-ov'
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto;'
+  ov.onclick = e => { if (e.target === ov) closePreviewQuo() }
+  ov.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:900px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 18px;background:#002060;color:#fff;">
+        <div style="font-weight:700;font-size:14px;">👁 Preview Quotation — ${esc(h.qo_number || '-')}</div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="previewQuoPDF('${h.id}')" style="background:#fff;color:#002060;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;">⬇ PDF</button>
+          <button onclick="closePreviewQuo()" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:7px;padding:6px 12px;font-size:12px;cursor:pointer;">✕ Tutup</button>
+        </div>
+      </div>
+      <div style="padding:18px;max-height:78vh;overflow:auto;">
+        <div style="display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;">
+          <div>
+            <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Kepada</div>
+            <div style="font-weight:700;font-size:13px;">${esc(cust.company || '-')}</div>
+            ${cust.address ? `<div style="color:#64748b;max-width:340px;">${esc(cust.address)}</div>` : ''}
+            ${cust.contact ? `<div style="color:#64748b;">UP: ${esc(cust.contact)}</div>` : ''}
+            ${cust.tel ? `<div style="color:#64748b;">Tel: ${esc(cust.tel)}</div>` : ''}
+            ${cust.email ? `<div style="color:#64748b;">${esc(cust.email)}</div>` : ''}
+          </div>
+          <div style="text-align:right;">
+            ${h.title ? `<div style="font-weight:600;margin-bottom:3px;">${esc(h.title)}</div>` : ''}
+            <div style="color:#64748b;">Tanggal: <b>${h.date ? fmtD(h.date) : '-'}</b></div>
+            ${h.valid_until ? `<div style="color:#64748b;">Berlaku s/d: <b>${fmtD(h.valid_until)}</b></div>` : ''}
+            <div style="color:#64748b;">Sales: <b>${esc(h.sales_name || '-')}</b></div>
+            <div style="color:#64748b;">Status: <b>${esc(h.status || '-')}</b></div>
+          </div>
+        </div>
+        <div style="overflow:auto;border:1px solid #e6ebf2;border-radius:10px;">
+          <table style="width:100%;border-collapse:collapse;font-size:11.5px;">
+            <thead><tr style="background:#f8fafc;text-align:left;color:#475569;">
+              <th style="padding:7px;">No</th><th style="padding:7px;">Part No</th><th style="padding:7px;">Deskripsi</th>
+              <th style="padding:7px;${R}">Qty</th><th style="padding:7px;${R}">Harga</th><th style="padding:7px;${R}">Disc</th><th style="padding:7px;${R}">Total</th>
+            </tr></thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+          <table style="font-size:12px;min-width:260px;">
+            <tr><td style="padding:3px 10px;color:#64748b;">TOTAL</td><td style="padding:3px 10px;${R}">${fmt(tot)}</td></tr>
+            ${dp > 0 ? `<tr><td style="padding:3px 10px;color:#64748b;">DISKON (${dp}%)</td><td style="padding:3px 10px;${R}">- ${fmt(da)}</td></tr>` : ''}
+            <tr><td style="padding:3px 10px;color:#64748b;">SUB TOTAL</td><td style="padding:3px 10px;${R}">${fmt(sub)}</td></tr>
+            <tr><td style="padding:3px 10px;color:#64748b;">PPN ${vp}%</td><td style="padding:3px 10px;${R}">${fmt(vat)}</td></tr>
+            <tr style="font-weight:700;color:#002060;border-top:2px solid #002060;"><td style="padding:5px 10px;">GRAND TOTAL</td><td style="padding:5px 10px;${R}">${fmt(grand)}</td></tr>
+          </table>
+        </div>
+        ${(h.payment_terms || h.delivery_terms || h.notes) ? `<div style="margin-top:14px;font-size:11px;color:#64748b;border-top:1px solid #f1f5f9;padding-top:10px;">
+          ${h.payment_terms ? `<div><b>Pembayaran:</b> ${esc(h.payment_terms)}</div>` : ''}
+          ${h.delivery_terms ? `<div><b>Pengiriman:</b> ${esc(h.delivery_terms)}</div>` : ''}
+          ${h.notes ? `<div style="margin-top:5px;"><b>Catatan:</b><br>${esc(h.notes).replace(/\n/g, '<br>')}</div>` : ''}
+        </div>` : ''}
+      </div>
+    </div>`
+  document.body.appendChild(ov)
+  document.addEventListener('keydown', escClosePreview)
+}
+function escClosePreview(e) { if (e.key === 'Escape') closePreviewQuo() }
+function closePreviewQuo() {
+  const ov = document.getElementById('quo-prev-ov'); if (ov) ov.remove()
+  document.removeEventListener('keydown', escClosePreview)
+}
+async function previewQuoPDF(id) {
+  const h = pipeline.find(x => x.id === id); if (!h) return
+  const items = Array.isArray(h.items) ? h.items : []
+  const imgFiles = [...new Set(items.filter(r => r.t === 'i' && r.img).map(r => r.img))]
+  const images = {}
+  await Promise.all(imgFiles.map(f =>
+    fetch(imgSrc(f)).then(r => { if (!r.ok) throw 0; return r.blob() })
+      .then(b => new Promise(res => { const fr = new FileReader(); fr.onload = () => { images[f] = fr.result; res() }; fr.onerror = () => res(); fr.readAsDataURL(b) }))
+      .catch(() => {})
+  ))
+  generatePDF({
+    info: { qo_number: h.qo_number, title: h.title, date: h.date, valid_until: h.valid_until, sales_name: h.sales_name, sales_mobile: h.sales_mobile, payment_terms: h.payment_terms, delivery_terms: h.delivery_terms, notes: h.notes, vat_pct: h.vat_pct != null ? +h.vat_pct : 12, discount_pct: +h.discount_pct || 0, engineer: h.engineer },
+    customer: h.customer_snapshot || {},
+    items, images
+  })
+  toast('PDF didownload!')
 }
 
 // List perlu follow-up: tanpa update > 2 minggu, status masih berjalan
