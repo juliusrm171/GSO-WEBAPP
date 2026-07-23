@@ -124,7 +124,8 @@ export async function getAllMilestones() {
 
 // Milestone yang lewat deadline (belum done & target < hari ini) — untuk banner peringatan & reminder Fase 5
 export async function getOverdueMilestones() {
-  const today = new Date().toISOString().slice(0, 10)
+  const n = new Date()
+  const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
   const { data, error } = await supabase.from('project_milestones')
     .select('*, projects(id, name, stage)')
     .eq('done', false).not('target_date', 'is', null).lt('target_date', today)

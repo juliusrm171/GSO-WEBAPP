@@ -23,7 +23,7 @@ export function generatePDF(quotation) {
 
   const tot = items.filter(r => r.t === 'i').reduce((s, r) => s + calcItem(r), 0)
   const dp = info.discount_pct || 0
-  const vp = info.vat_pct || 12
+  const vp = info.vat_pct != null ? +info.vat_pct : 12
   const da = tot * dp / 100
   const sub = tot - da
   const vat = sub * vp / 100

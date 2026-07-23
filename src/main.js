@@ -51,4 +51,13 @@ async function logout() {
   await signOut()
 }
 
-init()
+init().catch(err => {
+  console.error('Init gagal:', err)
+  const app = document.getElementById('app')
+  if (app) app.innerHTML = `<div style="max-width:420px;margin:80px auto;padding:24px;text-align:center;font-family:system-ui,sans-serif;color:#334155;">
+    <div style="font-size:34px;margin-bottom:8px;">⚠️</div>
+    <div style="font-weight:700;font-size:16px;margin-bottom:6px;">Gagal memuat aplikasi</div>
+    <div style="font-size:13px;color:#64748b;margin-bottom:16px;">Periksa koneksi internet lalu muat ulang halaman.</div>
+    <button onclick="location.reload()" style="background:#002060;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer;">↻ Muat ulang</button>
+  </div>`
+})

@@ -49,7 +49,8 @@ nav{background:#002060;display:flex;align-items:stretch;padding:0 1rem;position:
 .bdel{background:none;border:none;cursor:pointer;color:#cbd5e1;padding:3px 5px;border-radius:4px;font-size:14px;}
 .bdel:hover{color:#ef4444;background:#fef2f2;}
 .abar{display:flex;gap:7px;margin-top:.9rem;flex-wrap:wrap;}
-.itbl{width:100%;border-collapse:collapse;font-size:12px;}
+.itbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
+.itbl td{word-break:break-word;overflow-wrap:anywhere;}
 .itbl th{background:#002060;color:#fff;padding:7px 6px;text-align:left;font-size:10px;white-space:nowrap;}
 .itbl th.r{text-align:right;}
 .itbl td{padding:3px 2px;border-bottom:1px solid #f1f5f9;vertical-align:top;}
@@ -350,11 +351,16 @@ const HOLIDAYS_SEED_2026 = [
   '2026-01-01', '2026-01-16', '2026-02-16', '2026-02-17', '2026-03-18', '2026-03-19', '2026-03-20',
   '2026-03-21', '2026-03-22', '2026-03-23', '2026-03-24', '2026-04-03', '2026-04-05', '2026-05-01',
   '2026-05-14', '2026-05-15', '2026-05-27', '2026-05-28', '2026-05-31', '2026-06-01', '2026-06-16',
-  '2026-08-17', '2026-08-25', '2026-12-25', '2026-12-26'
+  '2026-08-17', '2026-08-25', '2026-12-25', '2026-12-26',
+  // 2027 — hanya tanggal tetap yang pasti; libur bergerak (Idul Fitri, Imlek, dll) ditambah admin lewat setting
+  '2027-01-01', '2027-05-01', '2027-06-01', '2027-08-17', '2027-12-25'
 ]
 let holidaySet = null
 const getHolidays = () => holidaySet || new Set(HOLIDAYS_SEED_2026)
-const isoOf = d => d.toISOString().slice(0, 10)
+// Tanggal ISO (YYYY-MM-DD) dalam waktu LOKAL (WIB) — hindari geser 1 hari akibat UTC
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const todayISO = () => localISO(new Date())
+const isoOf = d => localISO(d)
 // Hari kerja = bukan Minggu (getDay 0) DAN bukan hari libur
 const isWorkday = d => d.getDay() !== 0 && !getHolidays().has(isoOf(d))
 // Tanggal kerja berikutnya (>= d)
@@ -1294,7 +1300,7 @@ export async function renderApp(container, user, logout) {
     pickImportPO, confirmImportPO, cancelImportPO, poImpToggle, exportPOXlsx, exportCustXlsx,
     pickImportCust, confirmImportCust, cancelImportCust, custImpToggle,
     exportProdXlsx, pickImportProd, confirmImportProd, cancelImportProd, prodImpToggle,
-    saveCompanyTarget, setPOSales,
+    saveCompanyTarget, saveCompanyTargetMonth, setPOSales,
     smPartChange, saveStockItemManual, updStockQty, renderStock, delStockItem, loadStock,
     pickImportStock, confirmImportStock, cancelImportStock, stockImpToggle, exportStockXlsx,
     togglePrjForm, savePrj, renderPrjList, togglePrjDetail, updPrjStage, delPrj, loadProjectsData,
@@ -1323,7 +1329,7 @@ export async function renderApp(container, user, logout) {
 function applyRoleUI() {
   myProfile = profiles.find(p => p.id === currentUser?.id) || null
   // Fallback: kalau kolom role belum ada (migration belum dijalankan), jangan kunci siapa pun
-  myRole = myProfile ? (myProfile.role === undefined ? 'admin' : (myProfile.role || 'sales')) : 'sales'
+  myRole = (myProfile && myProfile.role) ? myProfile.role : 'sales'
 
   const lbl = document.getElementById('user-label')
   if (lbl) lbl.innerHTML = `${myProfile?.name || currentUser?.email || ''} <span class="role-badge">${ROLE_LABELS[myRole] || myRole}</span>`
@@ -1484,7 +1490,7 @@ function renderCleanPanel() {
     <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:9px 11px;margin-bottom:8px;">
       ${g.map((c, ci) => `<label style="display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0;cursor:pointer;">
         <input type="radio" name="dupg-${gi}" value="${c.id}"${ci === 0 ? ' checked' : ''}>
-        <b>${esc(c.company || '-')}</b><span style="color:#94a3b8;font-size:10px;">${[c.contact, c.tel, c.industry].filter(Boolean).join(' · ')}</span>
+        <b>${esc(c.company || '-')}</b><span style="color:#94a3b8;font-size:10px;">${esc([c.contact, c.tel, c.industry].filter(Boolean).join(' · '))}</span>
       </label>`).join('')}
       <div style="font-size:10px;color:#92400e;margin:4px 0 6px;">Kontak & visit ikut pindah ke yang dipertahankan; nama di shodan/PO/visit disamakan; duplikat dihapus.</div>
       <button class="bxs" style="border-color:#f59e0b;color:#92400e;" onclick="mergeDupGroup(${gi})">🔀 Gabungkan Grup Ini</button>
@@ -1593,7 +1599,14 @@ function aNote() { rows.push({ id: ++ctr, t: 'n', text: '' }); renderRows() }
 function aSub(pid) { const p = rows.find(r => r.id === pid); if (p) { (p.subs = p.subs || []).push({ id: ++ctr, text: '' }); renderRows() } }
 function delR(id) { rows = rows.filter(r => r.id !== id); rows.forEach(r => { if (r.subs) r.subs = r.subs.filter(s => s.id !== id) }); renderRows(); recalc() }
 function delS(pid, sid) { const p = rows.find(r => r.id === pid); if (p) p.subs = p.subs.filter(s => s.id !== sid); renderRows() }
-function uf(id, f, v) { const r = rows.find(x => x.id === id); if (r) { r[f] = ['qty', 'price', 'disc'].includes(f) ? +v : v; recalc() } }
+function uf(id, f, v) {
+  const r = rows.find(x => x.id === id); if (!r) return
+  if (f === 'disc') r.disc = Math.min(100, Math.max(0, +v || 0))
+  else if (f === 'qty') r.qty = Math.max(0, +v || 0)
+  else if (f === 'price') r.price = Math.max(0, +v || 0)
+  else r[f] = v
+  recalc()
+}
 
 // PART NUMBER SEARCH (from pricelist)
 function getPartDrop() {
@@ -1644,17 +1657,17 @@ function renderRows() {
   let nc = 0
   const gInfo = computeGroups(rows)
   document.getElementById('ibd').innerHTML = rows.map(r => {
-    if (r.t === 'g') return `<tr style="background:#f1f5f9;"><td colspan="2"></td><td colspan="5"><input value="${r.label || ''}" oninput="uf(${r.id},'label',this.value)" placeholder="Nama grup / bundle..." style="width:100%;font-weight:600;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-size:12px;font-family:inherit;"></td><td style="text-align:right;font-weight:700;color:#002060;font-size:11px;padding-right:5px;" id="gt${r.id}">${fmt(gInfo.sums[r.id] || 0)}</td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
-    if (r.t === 'n') return `<tr><td colspan="8"><textarea placeholder="Catatan..." oninput="uf(${r.id},'text',this.value)" style="width:100%;padding:3px 5px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:26px;">${r.text || ''}</textarea></td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
+    if (r.t === 'g') return `<tr style="background:#f1f5f9;"><td colspan="2"></td><td colspan="5"><input value="${escA(r.label || '')}" oninput="uf(${r.id},'label',this.value)" placeholder="Nama grup / bundle..." style="width:100%;font-weight:600;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-size:12px;font-family:inherit;"></td><td style="text-align:right;font-weight:700;color:#002060;font-size:11px;padding-right:5px;" id="gt${r.id}">${fmt(gInfo.sums[r.id] || 0)}</td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
+    if (r.t === 'n') return `<tr><td colspan="8"><textarea placeholder="Catatan..." oninput="uf(${r.id},'text',this.value)" style="width:100%;padding:3px 5px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:26px;">${esc(r.text || '')}</textarea></td><td><button class="bdel" onclick="delR(${r.id})">✕</button></td></tr>`
     nc++
     const subs = (r.subs || []).map((s, si) => `<tr class="sub"><td style="text-align:right;color:#94a3b8;font-size:10px;">${nc}.${si + 1}</td><td></td><td colspan="6"><textarea oninput="us(${r.id},${s.id},this.value)" placeholder="Sub-item..." style="width:100%;padding:3px 4px;border:1px solid transparent;border-radius:3px;background:transparent;color:#64748b;font-size:11px;font-family:inherit;resize:none;min-height:24px;">${esc(s.text || '')}</textarea></td><td><button class="bdel" onclick="delS(${r.id},${s.id})">✕</button></td></tr>`).join('')
     return `<tr>
       <td style="text-align:center;color:#94a3b8;">${nc}</td>
-      <td><input value="${r.part || ''}" placeholder="Part no. (ketik utk cari)" autocomplete="off" oninput="partSearch(${r.id},this)" onblur="hidePartDrop()"></td>
-      <td>${r.img ? `<img src="${imgSrc(r.img)}" onerror="this.style.display='none'" style="height:30px;float:left;margin:2px 6px 2px 0;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('${imgSrc(r.img)}','${jsArg((r.part || ''))}')">` : ''}<textarea oninput="uf(${r.id},'name',this.value)" style="width:${r.img ? 'calc(100% - 45px)' : '100%'};min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${r.name || ''}</textarea>
+      <td><input value="${escA(r.part || '')}" placeholder="Part no. (ketik utk cari)" autocomplete="off" oninput="partSearch(${r.id},this)" onblur="hidePartDrop()"></td>
+      <td>${r.img ? `<img src="${imgSrc(r.img)}" onerror="this.style.display='none'" style="height:30px;float:left;margin:2px 6px 2px 0;border-radius:4px;cursor:zoom-in;" onclick="showImgPop('${imgSrc(r.img)}','${jsArg((r.part || ''))}')">` : ''}<textarea oninput="uf(${r.id},'name',this.value)" style="width:${r.img ? 'calc(100% - 45px)' : '100%'};min-height:32px;padding:4px 5px;border:1px solid transparent;border-radius:4px;background:transparent;font-weight:500;font-size:12px;font-family:inherit;resize:none;">${esc(r.name || '')}</textarea>
         <button onclick="aSub(${r.id})" style="font-size:10px;color:#94a3b8;background:none;border:none;cursor:pointer;">+ sub</button></td>
       <td><input type="number" value="${r.qty}" min="1" oninput="uf(${r.id},'qty',this.value)" style="text-align:right;"></td>
-      <td><input value="${r.unit || ''}" oninput="uf(${r.id},'unit',this.value)"></td>
+      <td><input value="${escA(r.unit || '')}" oninput="uf(${r.id},'unit',this.value)"></td>
       <td><input type="number" value="${r.price || 0}" step="100000" oninput="uf(${r.id},'price',this.value)" style="text-align:right;"></td>
       <td><input type="number" value="${r.disc || 0}" min="0" max="100" oninput="uf(${r.id},'disc',this.value)" style="text-align:right;"></td>
       <td style="text-align:right;font-weight:600;padding-right:5px;color:#002060;font-size:11px;" id="rt${r.id}">${fmt(calcR(r))}</td>
@@ -1665,7 +1678,7 @@ function renderRows() {
 
 function recalc() {
   const tot = rows.filter(r => r.t === 'i').reduce((s, r) => s + calcR(r), 0)
-  const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
+  const dp = Math.min(100, Math.max(0, +(gv('f-disc') || 0))), vp = Math.max(0, +(gv('f-vat') || 12))
   const da = tot * dp / 100, sub = tot - da, vat = sub * vp / 100, grand = sub + vat
   document.getElementById('s-tot').textContent = fmt(tot)
   document.getElementById('s-dp').textContent = dp
@@ -1681,7 +1694,7 @@ function recalc() {
 
 function renderPrev() {
   const tot = rows.filter(r => r.t === 'i').reduce((s, r) => s + calcR(r), 0)
-  const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
+  const dp = Math.min(100, Math.max(0, +(gv('f-disc') || 0))), vp = Math.max(0, +(gv('f-vat') || 12))
   const da = tot * dp / 100, sub = tot - da, vat = sub * vp / 100, grand = sub + vat
 
   document.getElementById('pv-to').textContent = gv('f-co') || '-'
@@ -1717,7 +1730,7 @@ function renderPrev() {
 
 async function doPDF() {
   if (!canQuote()) { toast('Engineer tidak bisa membuat quotation', false); return }
-  const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
+  const dp = Math.min(100, Math.max(0, +(gv('f-disc') || 0))), vp = Math.max(0, +(gv('f-vat') || 12))
   // Muat gambar produk sebagai dataURL untuk disematkan ke PDF
   const imgFiles = [...new Set(rows.filter(r => r.t === 'i' && r.img).map(r => r.img))]
   const images = {}
@@ -1740,7 +1753,7 @@ async function doSaveQuo() {
   if (!canQuote()) { toast('Engineer tidak bisa membuat quotation', false); return }
   const btn = document.getElementById('btn-save-quo')
   const tot = rows.filter(r => r.t === 'i').reduce((s, r) => s + calcR(r), 0)
-  const dp = +(gv('f-disc') || 0), vp = +(gv('f-vat') || 12)
+  const dp = Math.min(100, Math.max(0, +(gv('f-disc') || 0))), vp = Math.max(0, +(gv('f-vat') || 12))
   const da = tot * dp / 100, sub = tot - da, vat = sub * vp / 100
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'
   try {
@@ -1941,7 +1954,7 @@ async function delContactDB(id) {
 function renderVisits() {
   // Set default date to today
   const dateEl = document.getElementById('v-date')
-  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10)
+  if (dateEl && !dateEl.value) dateEl.value = todayISO()
   vRelatedFill()
 
   const targetEl = document.getElementById('visit-target')
@@ -1954,7 +1967,7 @@ function renderVisits() {
 
 function currentMonthVisits() {
   const now = new Date()
-  const ym = now.toISOString().slice(0, 7) // YYYY-MM
+  const ym = localISO(now).slice(0, 7) // YYYY-MM
   return visits.filter(v => (v.visit_date || '').startsWith(ym))
 }
 
@@ -2035,7 +2048,7 @@ function renderVisitList() {
           <span class="badge" style="font-size:9px;background:${v.visit_type === 'online' ? '#e0f2fe' : '#dcfce7'};color:${v.visit_type === 'online' ? '#0369a1' : '#166534'};">${v.visit_type === 'online' ? '💻 Online' : '🏢 Onsite'}</span>
           ${!inDb ? '<span class="badge" style="font-size:9px;background:#fef3c7;color:#92400e;">KANVASING — belum di database</span>' : ''}
         </div>
-        <div class="visit-meta">${v.purpose || ''} · ${salesName}${relLabel ? ' · ' + relLabel : ''}</div>
+        <div class="visit-meta">${esc(v.purpose || '')} · ${esc(salesName)}${relLabel ? ' · ' + esc(relLabel) : ''}</div>
         ${v.notes ? `<div class="visit-notes">${esc(v.notes)}</div>` : ''}
       </div>
       ${!inDb && isAdmin() ? `<button class="bxs" style="flex-shrink:0;" onclick="custFromVisit('${v.id}')">➕ Jadikan Customer</button>` : ''}
@@ -2113,7 +2126,7 @@ async function saveVisit() {
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Menyimpan...'
   try {
     const myName = profiles.find(p => p.id === currentUser?.id)?.name || (currentUser?.email || '').split('@')[0]
-    const vDate = document.getElementById('v-date').value || new Date().toISOString().slice(0, 10)
+    const vDate = document.getElementById('v-date').value || todayISO()
     const rel = gv('v-related')
     const v = await addVisit({
       visit_date: vDate,
@@ -2159,7 +2172,7 @@ async function loadTargets() {
   try { targets = await getTargets() } catch (e) { console.error(e) }
 }
 
-const curMonth = () => new Date().toISOString().slice(0, 7)
+const curMonth = () => todayISO().slice(0, 7)
 const poSalesName = (p) => p.profiles?.name || profiles.find(x => x.id === p.sales_id)?.name || '-'
 
 function renderPO() {
@@ -2205,7 +2218,7 @@ function renderPO() {
   bd.innerHTML = filtered.map(p => {
     const quo = p.quotation_id ? pipeline.find(h => h.id === p.quotation_id) : null
     return `<tr>
-      <td style="font-weight:600;white-space:nowrap;">${p.po_number || '-'}${p.so_number ? `<div style="font-size:9px;color:#94a3b8;font-weight:400;">${p.so_number}</div>` : ''}</td>
+      <td style="font-weight:600;white-space:nowrap;">${esc(p.po_number || "-")}${p.so_number ? `<div style="font-size:9px;color:#94a3b8;font-weight:400;">${esc(p.so_number)}</div>` : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${fmtD(p.po_date)}</td>
       <td>${esc(p.customer_name || '-')}${p.notes ? `<div style="font-size:10px;color:#94a3b8;">${esc(p.notes)}</div>` : ''}</td>
       <td style="font-size:11px;color:#64748b;">${isAdmin() ? `<select onchange="setPOSales('${p.id}',this.value)" style="padding:3px 6px;border:1px solid ${p.sales_id ? '#e2e8f0' : '#fca5a5'};border-radius:6px;font-size:11px;max-width:130px;background:${p.sales_id ? '#fff' : '#fef2f2'};">
@@ -2236,7 +2249,7 @@ async function savePO() {
     const p = await addPO({
       po_number: no,
       so_number: gv('po-so').trim() || null,
-      po_date: gv('po-date') || new Date().toISOString().slice(0, 10),
+      po_date: gv('po-date') || todayISO(),
       customer_name: gv('po-cust'),
       sales_id: gv('po-sales-in') || null,
       quotation_id: gv('po-quo') || null,
@@ -2305,23 +2318,44 @@ function renderTargets() {
   }).join('') || '<div class="empty">Belum ada data sales.</div>'
 }
 
-// ── Target omset perusahaan per bulan (berlaku semua bulan, disimpan di app_settings) ──
+// ── Target omset perusahaan ──
+// companyTarget = target DEFAULT (dipakai bulan yang belum punya target khusus).
+// companyTargetByMonth = { "YYYY-MM": nilai } → target spesifik per periode (override default).
 let companyTarget = 0
+let companyTargetByMonth = {}
 async function loadCompanyTarget() {
   try {
     const v = await getSetting('company_target_monthly')
     companyTarget = +(v || 0)
-  } catch (e) { console.error(e) }
+    const m = await getSetting('company_target_by_month')
+    companyTargetByMonth = m ? (typeof m === 'string' ? JSON.parse(m) : m) : {}
+  } catch (e) { console.error(e); companyTargetByMonth = companyTargetByMonth || {} }
   const inp = document.getElementById('company-target'); if (inp && companyTarget) inp.value = companyTarget
-  const lbl = document.getElementById('company-target-lbl'); if (lbl) lbl.textContent = companyTarget ? '= ' + fmt(companyTarget) : ''
+  const lbl = document.getElementById('company-target-lbl'); if (lbl) lbl.textContent = companyTarget ? '= ' + fmt(companyTarget) + ' (default)' : ''
+}
+// Target untuk sebuah bulan: override periode kalau ada, kalau tidak pakai default
+const companyTargetFor = ym => {
+  const o = companyTargetByMonth && companyTargetByMonth[ym]
+  return o != null && +o > 0 ? +o : companyTarget
 }
 async function saveCompanyTarget(val) {
   if (!guardAdmin()) return
   try {
     companyTarget = +(val || 0)
     await setSetting('company_target_monthly', String(companyTarget))
-    const lbl = document.getElementById('company-target-lbl'); if (lbl) lbl.textContent = companyTarget ? '= ' + fmt(companyTarget) : ''
-    toast('Target perusahaan: ' + fmt(companyTarget) + ' / bulan')
+    const lbl = document.getElementById('company-target-lbl'); if (lbl) lbl.textContent = companyTarget ? '= ' + fmt(companyTarget) + ' (default)' : ''
+    toast('Target default perusahaan: ' + fmt(companyTarget) + ' / bulan')
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+// Set / hapus target khusus untuk satu bulan
+async function saveCompanyTargetMonth(ym, val) {
+  if (!guardAdmin()) return
+  try {
+    const n = +(val || 0)
+    if (n > 0) companyTargetByMonth[ym] = n; else delete companyTargetByMonth[ym]
+    await setSetting('company_target_by_month', JSON.stringify(companyTargetByMonth))
+    toast(n > 0 ? `Target ${ym}: ${fmt(n)}` : `Target khusus ${ym} dihapus (pakai default)`)
+    openMpop(ym)
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
@@ -2418,7 +2452,7 @@ function renderPOImportPreview() {
         Sales default:
         <select id="po-imp-sales" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
           <option value="">— belum ditentukan (isi nanti) —</option>
-          ${salesProfiles().map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+          ${salesProfiles().map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
         </select>
         <button class="bp" style="padding:5px 12px;font-size:11px;" id="btn-confirm-imp" onclick="confirmImportPO()">✅ Import yang Dicentang</button>
         <button class="bs" style="padding:5px 10px;font-size:11px;" onclick="cancelImportPO()">Batal</button>
@@ -2585,7 +2619,17 @@ async function confirmImportCust() {
   for (const r of chosen) {
     try {
       const { dupId, include, ...fields } = r
-      const c = dupId ? await updateCustomerFields(dupId, fields) : await upsertCustomer(fields)
+      let c
+      if (dupId) {
+        // Update customer yang sudah ada: HANYA isi kolom yang ada nilainya —
+        // jangan pernah menimpa data lama (area/kontak/alamat) dengan kosong.
+        const patch = {}
+        for (const [k, v] of Object.entries(fields)) { if (v !== null && v !== undefined && v !== '') patch[k] = v }
+        c = Object.keys(patch).length ? await updateCustomerFields(dupId, patch) : customers.find(x => x.id === dupId)
+        if (!c) { fail++; continue }
+      } else {
+        c = await upsertCustomer(fields)
+      }
       const idx = customers.findIndex(x => x.id === c.id)
       if (idx >= 0) customers[idx] = c; else customers.unshift(c)
       ok++
@@ -2811,22 +2855,25 @@ async function parseAccurateStock(file) {
     for (const r of raw.slice(hi + 1)) {
       let part = String(r?.[iPart] || '').trim()
       let name = iName >= 0 ? String(r?.[iName] || '').trim() : ''
+      const unit = iUnit >= 0 ? String(r?.[iUnit] || '').trim() : ''
       const qtyRaw = r?.[iQty]
-      const qty = +qtyRaw || 0
       if (part) { lastPart = part; lastName = name || lastName }
       else { part = lastPart; if (!name) name = lastName } // baris serial lanjutan
       if (!part || /^dari\s/i.test(part)) continue
-      if (qty <= 0 && qtyRaw !== 0) continue // baris tanpa qty valid
+      // Lewati hanya kalau sel qty benar-benar kosong / bukan angka; nilai 0 dan negatif tetap dihitung
+      if (qtyRaw === null || qtyRaw === undefined || String(qtyRaw).trim() === '' || isNaN(+qtyRaw)) continue
+      const qty = +qtyRaw
       const k = part.toLowerCase()
-      if (!agg[k]) agg[k] = { part_number: part, name: name || lastName, qty: 0 }
+      if (!agg[k]) agg[k] = { part_number: part, name: name || lastName, unit: unit || 'unit', qty: 0 }
       agg[k].qty += qty
       if (name && !agg[k].name) agg[k].name = name
+      if (unit && (!agg[k].unit || agg[k].unit === 'unit')) agg[k].unit = unit
     }
     stockImportRows = Object.values(agg).map(a => {
       const existing = stockItems.find(i => i.part_number.toLowerCase() === a.part_number.toLowerCase())
       return {
         part_number: a.part_number, name: a.name || '',
-        unit: iUnit >= 0 ? 'unit' : 'unit', qty: a.qty,
+        unit: a.unit || 'unit', qty: a.qty,
         isNew: !existing, oldQty: existing ? +existing.qty : null, include: true
       }
     })
@@ -2961,7 +3008,7 @@ function renderPrjList() {
     <div class="sc"><div class="sn">${projects.filter(p => p.stage !== 'Selesai' && p.stage !== 'Batal').length}</div><div class="sl">Project aktif</div></div>
     <div class="sc"><div class="sn">${projects.filter(p => p.stage === 'Instalasi').length}</div><div class="sl">Sedang instalasi</div></div>
     <div class="sc"><div class="sn">${projects.filter(p => p.stage === 'Selesai').length}</div><div class="sl">Selesai</div></div>
-    <div class="sc"><div class="sn">${projects.filter(p => p.due_date && p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date < new Date().toISOString().slice(0, 10)).length}</div><div class="sl" style="color:#dc2626;">Lewat target</div></div>`
+    <div class="sc"><div class="sn">${projects.filter(p => p.due_date && p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date < todayISO()).length}</div><div class="sl" style="color:#dc2626;">Lewat target</div></div>`
   // Banner: tahapan lewat deadline (bahan reminder Fase 5)
   const banner = overdueMs.length ? `
     <div style="border:1px solid #fca5a5;background:#fef2f2;border-radius:9px;padding:9px 12px;margin-bottom:9px;">
@@ -2975,13 +3022,13 @@ function renderPrjList() {
       ${overdueMs.length > 8 ? `<div style="font-size:10px;color:#991b1b;">…dan ${overdueMs.length - 8} lainnya</div>` : ''}
     </div>` : ''
   el.innerHTML = banner + (f.length ? f.map(p => {
-    const overdue = p.due_date && p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date < new Date().toISOString().slice(0, 10)
+    const overdue = p.due_date && p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date < todayISO()
     const row = `
     <div class="dbi" style="flex-direction:column;align-items:stretch;">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <div style="flex:1;min-width:150px;">
-          <div class="dn">${p.name} ${prjStageBadge(p.stage)}</div>
-          <div class="dm">${[p.customer_name, p.due_date ? 'target ' + fmtD(p.due_date) : ''].filter(Boolean).join(' · ')}${overdue ? ' <b style="color:#dc2626;">⚠ lewat target</b>' : ''}</div>
+          <div class="dn">${esc(p.name)} ${prjStageBadge(p.stage)}</div>
+          <div class="dm">${[esc(p.customer_name || ''), p.due_date ? 'target ' + fmtD(p.due_date) : ''].filter(Boolean).join(' · ')}${overdue ? ' <b style="color:#dc2626;">⚠ lewat target</b>' : ''}</div>
         </div>
         <button class="bxs" onclick="togglePrjDetail('${p.id}')">${expandedPrjId === p.id ? '▲ Tutup' : '▼ Detail'}</button>
         ${isAdmin() ? `<button class="bdel" onclick="delPrj('${p.id}')">🗑</button>` : ''}
@@ -3013,7 +3060,7 @@ function renderCockpit(p, boms, milestones, po) {
   const marginReal = jual - actual
   const marginRealPct = jual > 0 ? Math.round(marginReal / jual * 1000) / 10 : 0
   const totProg = milestones.length ? Math.round(milestones.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / milestones.length) : 0
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   const daysLeft = p.due_date ? Math.ceil((new Date(p.due_date) - new Date(today)) / 86400000) : null
   const overBudget = actual > budget && budget > 0
   const bi = (id, val, label) => `<div class="fld" style="gap:2px;"><label style="font-size:9px;">${label}</label><input id="ck-${id}" type="number" value="${val || ''}" placeholder="0" onchange="saveCockpit('${p.id}')" style="padding:4px 7px;font-size:11px;text-align:right;"></div>`
@@ -3058,13 +3105,13 @@ function renderPrjDetail(p) {
   const quo = p.quotation_id ? pipeline.find(h => h.id === p.quotation_id) : null
   const po = p.po_id ? pos.find(x => x.id === p.po_id) : null
   const BOM_ST = { pending: ['#94a3b8', 'Pending'], dipesan: ['#d97706', 'Dipesan'], tiba: ['#16a34a', 'Tiba'] }
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   const designFiles = files.filter(f => f.kind === 'design')
   const reportFiles = files.filter(f => f.kind === 'report')
   const otherFiles = files.filter(f => f.kind === 'doc' || f.kind === 'foto')
   const reports = updates.filter(u => u.kind === 'report')
   const feed = updates.filter(u => u.kind !== 'report')
-  const fileChip = fl => `<a href="${fl.url}" target="_blank" style="font-size:10px;color:#1d4ed8;text-decoration:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:5px;padding:2px 7px;">${{ design: '📐', report: '📝', doc: '📄', foto: '📷' }[fl.kind] || '📄'} ${(fl.name || 'file').slice(0, 26)}</a>`
+  const fileChip = fl => `<a href="${escA(fl.url)}" target="_blank" style="font-size:10px;color:#1d4ed8;text-decoration:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:5px;padding:2px 7px;">${{ design: '📐', report: '📝', doc: '📄', foto: '📷' }[fl.kind] || '📄'} ${esc((fl.name || 'file').slice(0, 26))}</a>`
   return `
   <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin:4px 0 10px;background:#f8fafc;">
     ${p.description ? `<div style="font-size:12px;color:#475569;margin-bottom:8px;">${esc(p.description)}</div>` : ''}
@@ -3140,7 +3187,7 @@ function renderPrjDetail(p) {
     <div style="font-size:11px;font-weight:700;color:#002060;margin:12px 0 5px;">✅ TASKS (${tasks.filter(t => t.status === 'done').length}/${tasks.length})</div>
     ${tasks.map(t => {
       const canToggle = isAdmin() || t.assignee_id === currentUser?.id
-      const late = t.due_date && t.status === 'open' && t.due_date < new Date().toISOString().slice(0, 10)
+      const late = t.due_date && t.status === 'open' && t.due_date < todayISO()
       return `
       <div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px dashed #e2e8f0;">
         <input type="checkbox"${t.status === 'done' ? ' checked' : ''}${canToggle ? '' : ' disabled'} onchange="togglePrjTask('${t.id}',this.checked)">
@@ -3155,7 +3202,7 @@ function renderPrjDetail(p) {
       <input id="task-title" placeholder="Task baru..." style="flex:2;min-width:120px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
       <select id="task-assignee" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
         <option value="">— siapa —</option>
-        ${profiles.map(pr => `<option value="${pr.id}">${pr.name}</option>`).join('')}
+        ${profiles.map(pr => `<option value="${pr.id}">${esc(pr.name)}</option>`).join('')}
       </select>
       <input id="task-due" type="date" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">
       <button class="bxs" onclick="addPrjTaskRow('${p.id}')">+ Task</button>
@@ -3250,7 +3297,7 @@ async function genStandardTimeline(pid) {
 async function updMilestoneProgress(id, val) {
   try {
     const prog = Math.max(0, Math.min(100, +val || 0))
-    const m = await updateProjectMilestone(id, { progress: prog, ...(prog >= 100 ? { done: true, done_date: new Date().toISOString().slice(0, 10) } : {}) })
+    const m = await updateProjectMilestone(id, { progress: prog, ...(prog >= 100 ? { done: true, done_date: todayISO() } : {}) })
     if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
     renderPrjList()
   } catch (e) { toast('Gagal: ' + e.message, false) }
@@ -3285,7 +3332,7 @@ async function exportTimelineXlsx(pid) {
     const toDate = s => s ? new Date(s + 'T00:00:00') : null
     const fmtISO = d => d.toISOString().slice(0, 10)
     // Pastikan tiap tahap punya start & target: hitung berantai (hari kerja) dari start project bila belum diisi
-    let cursor = toDate(p.start_date) || toDate(ms.find(m => m.start_date)?.start_date) || new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')
+    let cursor = toDate(p.start_date) || toDate(ms.find(m => m.start_date)?.start_date) || new Date(todayISO() + 'T00:00:00')
     const bars = ms.map((m, i) => {
       let start = toDate(m.start_date), end = toDate(m.target_date)
       const dur = Math.max(1, +m.duration_days || (start && end ? Math.round((end - start) / dayMs) + 1 : 1))
@@ -3300,7 +3347,7 @@ async function exportTimelineXlsx(pid) {
     const days = Array.from({ length: totalDays }, (_, k) => { const d = new Date(minD); d.setDate(d.getDate() + k); return d })
     const DOW = ['M', 'S', 'S', 'R', 'K', 'J', 'S'] // Minggu..Sabtu (id) — huruf pertama
     const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des']
-    const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')
+    const today = new Date(todayISO() + 'T00:00:00')
     const totProg = Math.round(ms.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / ms.length)
 
     const wb = new ExcelJS.Workbook()
@@ -3391,7 +3438,7 @@ async function autoScheduleTimeline(pid) {
   if (!ms.length) { toast('Belum ada milestone', false); return }
   if (ms.some(m => !m.duration_days && !m.done)) { toast('Isi dulu durasi (⏱ hari) untuk semua tahap yang belum selesai', false); return }
   // Durasi = jumlah HARI KERJA (Senin–Sabtu, lewati Minggu & libur nasional)
-  let cur = new Date((p.start_date || new Date().toISOString().slice(0, 10)) + 'T00:00:00')
+  let cur = new Date((p.start_date || todayISO()) + 'T00:00:00')
   try {
     for (const m of ms) {
       const dur = Math.max(1, +m.duration_days || 1)
@@ -3407,7 +3454,7 @@ async function autoScheduleTimeline(pid) {
     // target selesai project = deadline tahap terakhir
     const lastTarget = prjChildren.milestones.slice().sort((a, b) => (a.sort || 99) - (b.sort || 99)).at(-1)?.target_date
     if (lastTarget) {
-      const up = await updateProject(pid, { due_date: lastTarget, ...(p.start_date ? {} : { start_date: new Date().toISOString().slice(0, 10) }) })
+      const up = await updateProject(pid, { due_date: lastTarget, ...(p.start_date ? {} : { start_date: todayISO() }) })
       const pi = projects.findIndex(x => x.id === pid); if (pi >= 0) projects[pi] = up
     }
     overdueMs = await getOverdueMilestones()
@@ -3433,7 +3480,7 @@ async function toggleMilestone(id, done, hasPhoto) {
     return
   }
   try {
-    const m = await updateProjectMilestone(id, { done, done_date: done ? new Date().toISOString().slice(0, 10) : null, ...(done ? { progress: 100 } : {}) })
+    const m = await updateProjectMilestone(id, { done, done_date: done ? todayISO() : null, ...(done ? { progress: 100 } : {}) })
     if (prjChildren?.milestones) { const i = prjChildren.milestones.findIndex(x => x.id === id); if (i >= 0) prjChildren.milestones[i] = m }
     try { overdueMs = await getOverdueMilestones() } catch (e) {}
     renderPrjList()
@@ -3882,7 +3929,7 @@ async function renderAnalytics() {
   const finished = projects.filter(p => p.stage === 'Selesai')
   const onTime = finished.filter(p => !p.due_date || !p.done_date || p.done_date <= p.due_date).length
   const otRate = finished.length ? Math.round(onTime / finished.length * 100) : (projects.length ? 100 : 0)
-  const atRisk = projects.filter(p => p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date && p.due_date < new Date().toISOString().slice(0, 10)).length
+  const atRisk = projects.filter(p => p.stage !== 'Selesai' && p.stage !== 'Batal' && p.due_date && p.due_date < todayISO()).length
   // Target attainment (tahun berjalan)
   const year = new Date().toISOString().slice(0, 4)
   const sp = salesProfiles()
@@ -3929,7 +3976,7 @@ async function renderDashProjects() {
   el.innerHTML = '<div class="empty">Memuat progress project…</div>'
   let allMs = []
   try { allMs = await getAllMilestones() } catch (e) { console.error(e) }
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   const active = projects.filter(p => p.stage !== 'Selesai' && p.stage !== 'Batal')
   const msOf = pid => allMs.filter(m => m.project_id === pid)
   const progOf = ms => ms.length ? Math.round(ms.reduce((s, m) => s + (m.done ? 100 : (+m.progress || 0)), 0) / ms.length) : null
@@ -3958,7 +4005,7 @@ async function renderDashProjects() {
         const overdue = p.due_date && p.due_date < today
         return `<div style="padding:9px 0;border-bottom:1px solid #f1f5f9;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <b style="font-size:12.5px;">${p.name}</b> ${prjStageBadge(p.stage)}
+            <b style="font-size:12.5px;">${esc(p.name)}</b> ${prjStageBadge(p.stage)}
             <span style="font-size:11px;color:#64748b;">${esc(p.customer_name || '')}</span>
             <span style="flex:1;"></span>
             ${p.due_date ? `<span style="font-size:10px;color:${overdue ? '#dc2626' : '#94a3b8'};font-weight:${overdue ? '700' : '400'};">${overdue ? '⚠ ' : ''}target ${fmtD(p.due_date)}</span>` : ''}
@@ -3981,7 +4028,7 @@ async function renderEngineerDash() {
   let myTasks = []
   try { myTasks = await getMyOpenTasks(currentUser.id) } catch (e) { console.error(e) }
   const active = projects.filter(p => p.stage !== 'Selesai' && p.stage !== 'Batal')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   page.innerHTML = `
     <div style="font-size:17px;font-weight:600;margin-bottom:1rem;">Halo, ${myProfile?.name || 'Engineer'} 👷</div>
     <div class="sg">
@@ -4016,7 +4063,7 @@ async function renderEngineerDash() {
       ${active.length ? active.map(p => `
         <div style="padding:7px 0;border-bottom:1px solid #f1f5f9;">
           <div style="display:flex;align-items:center;gap:7px;font-size:12px;">
-            <b style="flex:1;">${p.name}</b> ${prjStageBadge(p.stage)}
+            <b style="flex:1;">${esc(p.name)}</b> ${prjStageBadge(p.stage)}
             <button class="bxs" onclick="nav('project');setTimeout(()=>togglePrjDetail('${p.id}'),50)">Buka & Update</button>
           </div>
           ${prjStepper(p)}
@@ -4509,7 +4556,7 @@ function renderPip() {
     ${list.map(v => `<div style="padding:4px 0;border-bottom:1px solid #eef2f7;font-size:11px;">
       <b>${fmtD(v.visit_date)}</b>
       <span class="badge" style="font-size:9px;background:${v.visit_type === 'online' ? '#e0f2fe' : '#dcfce7'};color:${v.visit_type === 'online' ? '#0369a1' : '#166534'};">${v.visit_type === 'online' ? '💻 Online' : '🏢 Onsite'}</span>
-      ${v.purpose || ''} · ${v.profiles?.name || v.sales_name || '-'}${v.contact ? ' · ketemu ' + v.contact : ''}
+      ${esc(v.purpose || '')} · ${esc(v.profiles?.name || v.sales_name || '-')}${v.contact ? ' · ketemu ' + esc(v.contact) : ''}
       ${v.notes ? `<div style="color:#64748b;margin-top:2px;">${esc(v.notes)}</div>` : ''}
     </div>`).join('')}
   </td></tr>`
@@ -4535,7 +4582,7 @@ function renderPip() {
         <td style="color:#64748b;font-size:11px;">${esc(s.title || '-')}${s.notes ? `<div style="font-size:10px;color:#94a3b8;">${esc(s.notes)}</div>` : ''}${canQuote() && s.status === 'Open' ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="shodanToQuo('${s.id}')">→ Quotation</button>` : ''}${vBtn}</td>
         <td style="text-align:right;font-weight:600;white-space:nowrap;color:#92400e;">${fmt(+s.est_value || 0)}</td>
         <td><input type="date" value="${s.last_fu || ''}" onchange="updShFU('${s.id}',this.value)" ${editable ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
-        <td>${editable ? `<select onchange="updShStatus('${s.id}',this.value)">${['Open', 'Won', 'Lost'].map(x => `<option${s.status === x ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${s.status}</span>`}${s.status === 'Lost' && s.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${s.lost_reason}</div>` : ''}${editable ? ` <button class="bdel" style="font-size:10px;" onclick="delShodan('${s.id}')">🗑</button>` : ''}</td>
+        <td>${editable ? `<select onchange="updShStatus('${s.id}',this.value)">${['Open', 'Won', 'Lost'].map(x => `<option${s.status === x ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${s.status}</span>`}${s.status === 'Lost' && s.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${esc(s.lost_reason)}</div>` : ''}${editable ? ` <button class="bdel" style="font-size:10px;" onclick="delShodan('${s.id}')">🗑</button>` : ''}</td>
       </tr>${expanded}`
     }
     const h = m.row
@@ -4549,12 +4596,12 @@ function renderPip() {
     return `<tr id="piprow-q:${h.id}">
       <td style="font-weight:600;white-space:nowrap;">${h.qo_number || '-'}${isMe ? '<span class="my-badge">Saya</span>' : ''}</td>
       <td style="white-space:nowrap;font-size:10px;">${h.date ? new Date(h.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '-'}</td>
-      <td style="font-size:11px;color:#64748b;">${salesName}</td>
+      <td style="font-size:11px;color:#64748b;">${esc(salesName)}</td>
       <td>${esc(cust.company || '-')}</td>
-      <td style="color:#64748b;font-size:11px;">${desc || '-'}${(Array.isArray(h.items) && h.items.some(r => r.t === 'i')) ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="previewQuo('${h.id}')">👁 Preview</button>` : ''}${vBtn}</td>
+      <td style="color:#64748b;font-size:11px;">${esc(desc || '-')}${(Array.isArray(h.items) && h.items.some(r => r.t === 'i')) ? ` <button class="bxs" style="font-size:9px;padding:2px 7px;" onclick="previewQuo('${h.id}')">👁 Preview</button>` : ''}${vBtn}</td>
       <td style="text-align:right;font-weight:600;white-space:nowrap;color:#002060;">${h.grand_total ? fmt(h.grand_total) : '-'}</td>
       <td><input type="date" value="${h.last_fu || ''}" onchange="updFU('${h.id}',this.value)" ${(isAdmin() || (myRole === 'sales' && isMe)) ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
-      <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}${h.status === 'Closed - Lost' && h.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${h.lost_reason}</div>` : ''}${isAdmin() ? ` <button class="bdel" style="font-size:10px;" title="Hapus penawaran (admin)" onclick="delQuo('${h.id}')">🗑</button>` : ''}</td>
+      <td>${(isAdmin() || (myRole === 'sales' && isMe)) ? `<select onchange="updS('${h.id}',this.value)">${['Open', 'Nego', 'On Hold', 'Closed - Won', 'Closed - Lost'].map(s => `<option${h.status === s ? ' selected' : ''}>${s}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${h.status || '-'}</span>`}${h.status === 'Closed - Lost' && h.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${esc(h.lost_reason)}</div>` : ''}${isAdmin() ? ` <button class="bdel" style="font-size:10px;" title="Hapus penawaran (admin)" onclick="delQuo('${h.id}')">🗑</button>` : ''}</td>
     </tr>${expanded}`
   }).join('') || `<tr><td colspan="8" class="empty">Tidak ada data.</td></tr>`
 
@@ -4691,7 +4738,7 @@ function fuAge(baseDate) {
 function renderAttention() {
   const el = document.getElementById('dash-attention'); if (!el) return
   const items = []
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   const mine = myRole === 'sales' // sales lihat miliknya; admin/super lihat semua
   const isMineDeal = h => !mine || h.created_by === currentUser?.id
 
@@ -4775,8 +4822,8 @@ function renderFuAlerts() {
   list.innerHTML = items.map(i => `
     <div onclick="focusPip('${i.key}')" title="Klik untuk buka di daftar pipeline" style="display:flex;align-items:center;gap:8px;padding:6px 6px;border-bottom:1px solid #fef3c7;font-size:12px;cursor:pointer;border-radius:6px;transition:background .12s;" onmouseover="this.style.background='#fffbeb'" onmouseout="this.style.background=''">
       <span class="badge" style="background:${i.tipe === 'Shodan' ? '#fef3c7' : '#e0e7ff'};color:${i.tipe === 'Shodan' ? '#92400e' : '#3730a3'};">${i.tipe}</span>
-      <span style="flex:1;">${i.label}</span>
-      <span style="color:#64748b;">${i.sales}</span>
+      <span style="flex:1;">${esc(i.label)}</span>
+      <span style="color:#64748b;">${esc(i.sales)}</span>
       <span style="color:#b45309;font-weight:600;white-space:nowrap;">${i.age === Infinity ? 'belum pernah FU' : i.age + ' hari'}</span>
       <span style="color:#cbd5e1;font-size:13px;">›</span>
     </div>`).join('')
@@ -4887,7 +4934,7 @@ function renderDashboard() {
   const dvEl = document.getElementById('dash-visits')
   if (dvEl) {
     const now = new Date()
-    const ym = now.toISOString().slice(0, 7)
+    const ym = localISO(now).slice(0, 7)
     const mv = visits.filter(v => (v.visit_date || '').startsWith(ym))
     const allSales = [...new Set(salesProfiles().map(p => p.name).filter(Boolean))].sort()
     const dayOfMonth = now.getDate()
@@ -4925,7 +4972,7 @@ function renderDashboard() {
 }
 
 // ── GRAFIK PENJUALAN & LEADERBOARD PO ──
-let dashMode = 'monthly', dashYear = new Date().getFullYear(), lbMonth = new Date().toISOString().slice(0, 7)
+let dashMode = 'monthly', dashYear = new Date().getFullYear(), lbMonth = todayISO().slice(0, 7)
 const MONTH_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 
 function dashSetMode(m) { dashMode = m; renderSalesChart() }
@@ -4982,20 +5029,29 @@ function openMpop(ym) {
   const list = pos.filter(p => (p.po_date || '').startsWith(ym))
   const tot = list.reduce((s, p) => s + (+p.amount || 0), 0)
   const tgtSales = targets.filter(t => t.period === ym).reduce((s, t) => s + (+t.target || 0), 0)
-  // Target utama = target omset perusahaan (berlaku semua bulan); fallback ke jumlah target sales
-  const tgt = companyTarget > 0 ? companyTarget : tgtSales
+  // Target periode ini: override bulan kalau ada, kalau tidak default perusahaan, kalau tidak jumlah target sales
+  const monthOverride = companyTargetByMonth && companyTargetByMonth[ym] != null && +companyTargetByMonth[ym] > 0
+  const compTgt = companyTargetFor(ym)
+  const tgt = compTgt > 0 ? compTgt : tgtSales
   const pct = tgt > 0 ? Math.round(tot / tgt * 100) : null
   const achieved = tgt > 0 && tot >= tgt
   document.getElementById('mpop-title').textContent = '📅 ' + MONTH_ID[+m - 1] + ' ' + y
   document.getElementById('mpop-body').innerHTML = `
     <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total PO</span><span style="font-weight:600;">${list.length}</span></div>
     <div class="cb-row"><span style="font-size:12px;color:#64748b;">Total Revenue</span><span style="font-weight:700;color:#002060;">${fmt(tot)}</span></div>
-    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Target Perusahaan</span><span style="font-weight:600;">${companyTarget > 0 ? fmt(companyTarget) : 'Belum di-set'}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Target Perusahaan${monthOverride ? ' <span style="font-size:9px;color:#0369a1;">(khusus bulan ini)</span>' : (compTgt > 0 ? ' <span style="font-size:9px;color:#94a3b8;">(default)</span>' : '')}</span><span style="font-weight:600;">${compTgt > 0 ? fmt(compTgt) : 'Belum di-set'}</span></div>
     <div class="cb-row"><span style="font-size:12px;color:#64748b;">Target (jumlah per sales)</span><span style="font-weight:600;">${tgtSales > 0 ? fmt(tgtSales) : 'Belum di-set'}</span></div>
-    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Persentase (vs ${companyTarget > 0 ? 'target perusahaan' : 'target sales'})</span><span style="font-weight:700;color:${achieved ? '#16a34a' : '#002060'};">${pct !== null ? pct + '%' : '—'}</span></div>
+    <div class="cb-row"><span style="font-size:12px;color:#64748b;">Persentase (vs ${compTgt > 0 ? 'target perusahaan' : 'target sales'})</span><span style="font-weight:700;color:${achieved ? '#16a34a' : '#002060'};">${pct !== null ? pct + '%' : '—'}</span></div>
     <div style="margin-top:10px;text-align:center;padding:8px;border-radius:8px;font-weight:700;font-size:13px;background:${tgt === 0 ? '#f1f5f9' : achieved ? '#dcfce7' : '#fef2f2'};color:${tgt === 0 ? '#64748b' : achieved ? '#16a34a' : '#dc2626'};">
       ${tgt === 0 ? 'Target belum di-set' : achieved ? '✅ ACHIEVE' : '❌ Belum Achieve'}
-    </div>`
+    </div>
+    ${isAdmin() ? `<div style="margin-top:10px;border-top:1px solid #f1f5f9;padding-top:8px;">
+      <label style="font-size:11px;color:#64748b;">Target khusus bulan ini (kosongkan = pakai default)</label>
+      <div style="display:flex;gap:6px;margin-top:4px;">
+        <input id="mpop-tgt" type="number" value="${monthOverride ? +companyTargetByMonth[ym] : ''}" placeholder="${companyTarget || 'mis. 2000000000'}" style="flex:1;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
+        <button onclick="saveCompanyTargetMonth('${ym}',document.getElementById('mpop-tgt').value)" style="background:#002060;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;">Simpan</button>
+      </div>
+    </div>` : ''}`
   document.getElementById('mpop-overlay').classList.add('on')
 }
 function closeMpop() { document.getElementById('mpop-overlay').classList.remove('on') }
@@ -5149,7 +5205,7 @@ function renderShodan() {
       <td style="font-size:11px;color:#64748b;">${s.profiles?.name || '-'}</td>
       <td style="text-align:right;font-weight:600;color:#002060;white-space:nowrap;">${fmt(s.est_value || 0)}</td>
       <td><input type="date" value="${s.last_fu || ''}" onchange="updShFU('${s.id}',this.value)" ${editable ? '' : 'disabled'} style="font-size:10px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:5px;width:100%;"></td>
-      <td>${editable ? `<select onchange="updShStatus('${s.id}',this.value)">${['Open', 'Penawaran', 'Won', 'Lost'].map(x => `<option${s.status === x ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${s.status}</span>`}${s.status === 'Lost' && s.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${s.lost_reason}</div>` : ''}</td>
+      <td>${editable ? `<select onchange="updShStatus('${s.id}',this.value)">${['Open', 'Penawaran', 'Won', 'Lost'].map(x => `<option${s.status === x ? ' selected' : ''}>${x}</option>`).join('')}</select>` : `<span style="font-size:11px;color:#64748b;">${s.status}</span>`}${s.status === 'Lost' && s.lost_reason ? `<div style="font-size:9px;color:#ef4444;margin-top:2px;">${esc(s.lost_reason)}</div>` : ''}</td>
       <td style="white-space:nowrap;">
         ${canQuote() && s.status === 'Open' ? `<button class="bxs" onclick="shodanToQuo('${s.id}')">→ Quotation</button>` : ''}
         ${editable ? `<button class="bdel" onclick="delShodan('${s.id}')">🗑</button>` : ''}
@@ -5329,9 +5385,9 @@ function renderCustList(q) {
           <span class="badge ${c.customer_type === 'End User' ? 'badge-eu' : 'badge-pt'}">${c.customer_type || 'PT'}</span>
           <div class="dn">${esc(c.company || '-')}</div>
         </div>
-        <div class="dm">${[c.contact, c.tel, c.industry].filter(Boolean).join(' · ') || '—'}</div>
-        ${c.area_big ? `<div class="dm" style="color:#0369a1;">📍 ${c.area_big}${c.area_small ? ' · ' + c.area_small : ''}</div>` : ''}
-        ${c.email ? `<div class="dm">${c.email}</div>` : ''}
+        <div class="dm">${esc([c.contact, c.tel, c.industry].filter(Boolean).join(' · ')) || '—'}</div>
+        ${c.area_big ? `<div class="dm" style="color:#0369a1;">📍 ${esc(c.area_big)}${c.area_small ? ' · ' + c.area_small : ''}</div>` : ''}
+        ${c.email ? `<div class="dm">${esc(c.email)}</div>` : ''}
       </div>
       <div style="display:flex;gap:4px;flex-shrink:0;">
         <button class="bxs" onclick="toggleContacts('${c.id}')">👥 Kontak${nContacts ? ' (' + nContacts + ')' : ''}</button>
@@ -5453,9 +5509,9 @@ function renderProdList(q) {
     if (editingProdId === p.id) return renderProdEditRow(p)
     return `
     <div class="dbi">
-      <div><div class="dn">${p.name}</div><div class="dm">${fmtPL(p.price || 0)} / ${p.unit || 'unit'} · ${esc(p.category || '')}</div>${attLinks(p.attachments, true)}</div>
+      <div><div class="dn">${esc(p.name)}</div><div class="dm">${fmtPL(p.price || 0)} / ${p.unit || 'unit'} · ${esc(p.category || '')}</div>${attLinks(p.attachments, true)}</div>
       <div style="display:flex;gap:4px;">
-        ${canQuote() ? `<button class="bxs" onclick="aItem('${jsArg(p.name)}','${jsArg((p.part || ''))}',1,'${p.unit || 'unit'}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button>` : ''}
+        ${canQuote() ? `<button class="bxs" onclick="aItem('${jsArg(p.name)}','${jsArg((p.part || ''))}',1,'${jsArg(p.unit || 'unit')}',${p.price || 0},0);nav('quotation');qt('items')">+ Quote</button>` : ''}
         ${isAdmin() ? `<button class="bxs" title="Attach dokumen (datasheet, sertifikat)" onclick="pickAttach('prod','${p.id}')">📎</button>
         <button class="bxs" style="border-color:#fbbf24;color:#92400e;" onclick="startEditProd('${p.id}')">✏️ Edit</button>
         <button class="bdel" onclick="delProd('${p.id}')">🗑</button>` : ''}
