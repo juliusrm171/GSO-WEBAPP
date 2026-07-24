@@ -1,6 +1,9 @@
-import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, deleteQuotation, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone, getOverdueMilestones, getAllMilestones } from '../lib/supabase.js'
+import { getCustomers, upsertCustomer, deleteCustomer, updateCustomerFields, mergeCustomerInto, getProducts, upsertProduct, deleteProduct, getQuotations, saveQuotation, updateQuotationStatus, updateQuotationFields, deleteQuotation, getShodans, addShodan, updateShodan, deleteShodan, getPOs, addPO, deletePO, getTargets, setTarget, getProfiles, updateProfile, getSession, getVisits, addVisit, updateVisit, deleteVisit, getSetting, setSetting, getContacts, addContact, deleteContact, updateContact, uploadAttachment, updatePOFields, updateProductFields, getStockItems, upsertStockItem, updateStockItem, deleteStockItem, getPricelist, getProjects, addProject, updateProject, deleteProject, getProjectChildren, addProjectTask, updateProjectTask, deleteProjectTask, addProjectBom, updateProjectBom, deleteProjectBom, deleteProjectBomsFor, addProjectFile, deleteProjectFile, addProjectUpdate, getMyOpenTasks, addProjectMilestone, updateProjectMilestone, deleteProjectMilestone, getOverdueMilestones, getAllMilestones } from '../lib/supabase.js'
 import * as XLSX from 'xlsx'
-import { PL_BRANDS, PL_CATS, PL_ITEMS } from '../lib/pricelist.js'
+import { PL_BRANDS, PL_CATS } from '../lib/pricelist.js'
+// PL_ITEMS TIDAK lagi di-bundle (rahasia harga). Dimuat runtime dari DB lewat loadPricelist().
+// Bentuk tiap item dipertahankan: [name, part, price, catIdx, img, brandIdx]
+let PL_ITEMS = []
 import { generatePDF } from '../lib/pdf.js'
 
 const CSS = `<style>
@@ -321,6 +324,9 @@ const salesProfiles = () => {
   const hasFlag = profiles.some(p => p.is_sales !== undefined && p.is_sales !== null)
   return hasFlag ? profiles.filter(p => p.is_sales) : profiles.filter(p => p.role !== 'engineer')
 }
+// Sales AKTIF saja (untuk pilihan input/target periode berjalan). Sales yang keluar (is_active=false) tetap
+// muncul di histori (nama di PO/leaderboard lama) tapi tidak lagi jadi pilihan penugasan baru.
+const activeSalesProfiles = () => salesProfiles().filter(p => p.is_active !== false)
 
 // ── FASE 13: Normalisasi & dedup nama customer ──
 // Standar: "PT Nama Perusahaan" (PT tanpa titik, di depan). Perorangan/End User tidak dipaksa.
@@ -762,7 +768,7 @@ export async function renderApp(container, user, logout) {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.65rem;">
         <div><div style="font-size:15px;font-weight:600;">Pricelist 2026 Q1</div>
-          <div style="font-size:11px;color:#64748b;">Kurs Rp 18.000/USD · <b>${PL_ITEMS.length.toLocaleString()}</b> produk</div>
+          <div style="font-size:11px;color:#64748b;">Kurs Rp 18.000/USD · <b class="pl-total">${PL_ITEMS.length.toLocaleString()}</b> produk</div>
         </div>
       </div>
       <div class="pl-bar">
@@ -1183,7 +1189,7 @@ export async function renderApp(container, user, logout) {
   <div class="modal-overlay" id="modal-overlay">
     <div class="modal">
       <div class="modal-hd">
-        <span>💰 Pilih dari Pricelist (${PL_ITEMS.length.toLocaleString()} produk)</span>
+        <span>💰 Pilih dari Pricelist (<span class="pl-total">${PL_ITEMS.length.toLocaleString()}</span> produk)</span>
         <button onclick="closeModal()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-bd">
@@ -1270,7 +1276,7 @@ export async function renderApp(container, user, logout) {
   plSearch()
   renderRows()
 
-  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts(), loadShodans(), loadPOs(), loadTargets(), loadCompanyTarget(), loadStock(), loadProjectsData()])
+  await Promise.all([loadCustomers(), loadProducts(), loadPipeline(), loadProfiles(), loadVisits(), loadContacts(), loadShodans(), loadPOs(), loadTargets(), loadCompanyTarget(), loadStock(), loadProjectsData(), loadPricelist()])
   applyRoleUI()
   renderDashboard()
   if (!gv('f-no')) document.getElementById('f-no').value = genQuoNo()
@@ -1315,7 +1321,7 @@ export async function renderApp(container, user, logout) {
     doSaveCust, renderProdList, delProd, toggleAP, saveProd,
     doPDF, doSaveQuo, doLogout: onLogout,
     switchDbTab,
-    openProfile, closeProfile, saveMyProfile, chgUserRole, chgUserSales, genQuoNo,
+    openProfile, closeProfile, saveMyProfile, chgUserRole, chgUserSales, chgUserActive, genQuoNo,
     updFU, loadShodans, renderShodan, saveShodan, updShStatus, updShFU, delShodan, shodanToQuo, delQuo,
     shCustChange, showShCtDrop, hideShCtDrop, pickShCt,
     vRelatedFill, custFromVisit, togglePipVisits, kanvasToForm, renderKanvasList,
@@ -1388,8 +1394,11 @@ function openProfile() {
   if (isSuper()) {
     uw.style.display = 'block'
     document.getElementById('pf-user-list').innerHTML = profiles.map(p => `
-      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;">
-        <div style="flex:1;font-size:12px;">${p.name || '-'}<div style="font-size:10px;color:#94a3b8;">${p.initials ? 'Inisial: ' + p.initials : ''}</div></div>
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;${p.is_active === false ? 'opacity:.55;' : ''}">
+        <div style="flex:1;font-size:12px;">${esc(p.name || '-')}${p.is_active === false ? ' <span style="font-size:9px;color:#b45309;background:#fef3c7;padding:0 5px;border-radius:8px;">nonaktif</span>' : ''}<div style="font-size:10px;color:#94a3b8;">${p.initials ? 'Inisial: ' + esc(p.initials) : ''}</div></div>
+        <label title="Nonaktifkan kalau karyawan sudah keluar — nama tetap di histori PO, tapi tidak lagi jadi pilihan penugasan baru" style="display:flex;align-items:center;gap:4px;font-size:11px;color:#64748b;cursor:pointer;white-space:nowrap;">
+          <input type="checkbox"${p.is_active !== false ? ' checked' : ''} onchange="chgUserActive('${p.id}',this.checked)">Aktif
+        </label>
         <label title="Centang kalau user ini punya target penjualan & visit (muncul di Target, Leaderboard, Barometer)" style="display:flex;align-items:center;gap:4px;font-size:11px;color:#64748b;cursor:pointer;white-space:nowrap;">
           <input type="checkbox"${p.is_sales ? ' checked' : ''} onchange="chgUserSales('${p.id}',this.checked)">Sales
         </label>
@@ -1435,6 +1444,17 @@ async function chgUserRole(id, role) {
     const i = profiles.findIndex(x => x.id === p.id); if (i >= 0) profiles[i] = p
     if (id === currentUser.id) applyRoleUI()
     toast('Role ' + (p.name || '') + ' → ' + (ROLE_LABELS[role] || role))
+  } catch (e) { toast('Gagal: ' + e.message, false) }
+}
+
+// Aktif/nonaktif karyawan (mis. sudah keluar). Nonaktif = tidak jadi pilihan penugasan baru, tapi histori tetap.
+async function chgUserActive(id, active) {
+  if (!isSuper()) { toast('Hanya super admin', false); return }
+  try {
+    const p = await updateProfile(id, { is_active: !!active })
+    const i = profiles.findIndex(x => x.id === p.id); if (i >= 0) profiles[i] = p
+    openProfile(); renderTargets()
+    toast((p.name || 'User') + (p.is_active === false ? ' dinonaktifkan (keluar)' : ' diaktifkan'))
   } catch (e) { toast('Gagal: ' + e.message, false) }
 }
 
@@ -1820,6 +1840,20 @@ async function loadProducts() {
   } catch (e) { console.error(e) }
 }
 
+// Muat pricelist rahasia dari DB (engineer dapat kosong karena RLS). Bentuk: [name, part, price, catIdx, img, brandIdx]
+async function loadPricelist() {
+  try {
+    const data = await getPricelist()
+    PL_ITEMS = data.map(r => [r.name || '', r.part || '', +r.price || 0, +r.cat_idx || 0, r.img || '', +r.brand_idx || 0])
+  } catch (e) { console.error('Pricelist gagal dimuat:', e); PL_ITEMS = [] }
+  // Segarkan tampilan yang bergantung pada pricelist
+  plF = PL_ITEMS.slice(); mF = PL_ITEMS.slice()
+  try { renderPL() } catch (e) {}
+  try { renderM() } catch (e) {}
+  // Perbarui label jumlah produk di header pricelist & tombol modal
+  document.querySelectorAll('.pl-total').forEach(el => { el.textContent = PL_ITEMS.length.toLocaleString() })
+}
+
 async function loadPipeline() {
   try { pipeline = await getQuotations(); renderPip() }
   catch (e) { console.error(e) }
@@ -2176,7 +2210,9 @@ async function loadTargets() {
 }
 
 const curMonth = () => todayISO().slice(0, 7)
-const poSalesName = (p) => p.profiles?.name || profiles.find(x => x.id === p.sales_id)?.name || '-'
+const salesNameOf = id => profiles.find(x => x.id === id)?.name || null
+// Nama sales di PO: profil live → snapshot tersimpan (sales_name) → '-'. Snapshot menjaga nama tetap ada walau profil dinonaktifkan/dihapus.
+const poSalesName = (p) => p.profiles?.name || profiles.find(x => x.id === p.sales_id)?.name || p.sales_name || '-'
 
 function renderPO() {
   const bd = document.getElementById('po-bd'); if (!bd) return
@@ -2186,7 +2222,7 @@ function renderPO() {
   if (mEl && !mEl.value) mEl.value = curMonth()
   const salesSel = document.getElementById('po-sales-in')
   if (salesSel && !salesSel.options.length) {
-    salesSel.innerHTML = salesProfiles().map(p => `<option value="${p.id}"${p.id === currentUser?.id ? ' selected' : ''}>${p.name || '-'}</option>`).join('')
+    salesSel.innerHTML = activeSalesProfiles().map(p => `<option value="${p.id}"${p.id === currentUser?.id ? ' selected' : ''}>${esc(p.name || '-')}</option>`).join('')
   }
   const quoSel = document.getElementById('po-quo')
   if (quoSel && quoSel.options.length <= 1) {
@@ -2255,6 +2291,7 @@ async function savePO() {
       po_date: gv('po-date') || todayISO(),
       customer_name: gv('po-cust'),
       sales_id: gv('po-sales-in') || null,
+      sales_name: salesNameOf(gv('po-sales-in')),
       quotation_id: gv('po-quo') || null,
       amount, notes: gv('po-notes')
     })
@@ -2287,7 +2324,7 @@ function renderTargets() {
   const mEl = document.getElementById('tg-month')
   if (mEl && !mEl.value) mEl.value = document.getElementById('po-month')?.value || curMonth()
   const period = mEl?.value || curMonth()
-  const team = salesProfiles()
+  const team = activeSalesProfiles()
   el.innerHTML = team.map(p => {
     const t = targets.find(x => x.sales_id === p.id && x.period === period)
     const tv = +(t?.target || 0), vt = +(t?.visit_target || 0)
@@ -2366,7 +2403,7 @@ async function saveCompanyTargetMonth(ym, val) {
 async function setPOSales(id, salesId) {
   if (!guardAdmin()) return
   try {
-    const u = await updatePOFields(id, { sales_id: salesId || null })
+    const u = await updatePOFields(id, { sales_id: salesId || null, sales_name: salesNameOf(salesId) })
     const i = pos.findIndex(x => x.id === id); if (i >= 0) pos[i] = u
     renderPO(); toast('Sales PO di-update: ' + (poSalesName(u)))
   } catch (e) { toast('Gagal: ' + e.message, false) }
@@ -2485,7 +2522,7 @@ async function confirmImportPO() {
   for (const r of chosen) {
     try {
       // Sales dari file (kalau cocok dgn profil) diprioritaskan; kalau tidak, pakai default dropdown
-      const p = await addPO({ po_number: r.po_number, so_number: r.so_number, po_date: r.po_date, customer_name: r.customer_name, sales_id: r.sales_id || defSalesId, quotation_id: null, amount: r.amount, notes: 'Import' })
+      const p = await addPO({ po_number: r.po_number, so_number: r.so_number, po_date: r.po_date, customer_name: r.customer_name, sales_id: r.sales_id || defSalesId, sales_name: salesNameOf(r.sales_id || defSalesId) || r.sales_name_file || null, quotation_id: null, amount: r.amount, notes: 'Import' })
       pos.unshift(p); ok++
       if (btn && ok % 20 === 0) btn.textContent = `Mengimport… ${ok}/${chosen.length}`
     } catch (e) { fail++; console.error(r.so_number, e) }
@@ -4776,10 +4813,11 @@ function renderAttention() {
       onclick: `nav('project');setTimeout(()=>togglePrjDetail('${m.projects.id}'),50)` })
   })
 
-  // 3) PO belum di-assign sales (admin saja) — mengacaukan leaderboard
+  // 3) PO belum di-assign sales (admin saja) — hanya yang BENAR-BENAR tanpa pemilik.
+  // PO milik sales nonaktif/ex-sales (profil masih ada / punya snapshot nama) TIDAK dihitung "belum di-assign".
   if (isAdmin()) {
-    const salesIds = new Set(salesProfiles().map(p => p.id))
-    const un = pos.filter(p => !p.sales_id || !salesIds.has(p.sales_id)).length
+    const allProfileIds = new Set(profiles.map(p => p.id))
+    const un = pos.filter(p => (!p.sales_id || !allProfileIds.has(p.sales_id)) && !p.sales_name).length
     if (un) items.push({ icon: '🧾', bg: '#eff6ff', pill: 'Assign', pc: '#1d4ed8',
       text: `<b>${un} PO</b> belum ada sales-nya`, meta: 'set di tab PO agar leaderboard akurat', sort: 500, onclick: `nav('po')` })
   }
@@ -5087,12 +5125,15 @@ function renderLeaderboard() {
   const [y, m] = lbMonth.split('-')
   const lbl = document.getElementById('lb-month-lbl'); if (lbl) lbl.textContent = MONTH_ID[+m - 1] + ' ' + y
   const map = {}
-  const salesIds = new Set(salesProfiles().map(p => p.id))
-  // Hanya PO yang sudah di-assign ke sales (is_sales) yang masuk leaderboard — PO import tanpa sales dikecualikan
+  const allProfileIds = new Set(profiles.map(p => p.id))
+  // PO masuk leaderboard bila punya pemilik yang bisa dikenali: profil (aktif ATAU ex-sales) atau snapshot nama.
+  // Ini menjaga histori — PO sales yang sudah keluar tetap tampil di bulan lampau di bawah namanya.
   let unassigned = 0
   pos.filter(p => (p.po_date || '').startsWith(lbMonth)).forEach(p => {
-    if (!p.sales_id || !salesIds.has(p.sales_id)) { unassigned++; return }
-    const id = p.sales_id, name = poSalesName(p)
+    const known = p.sales_id && allProfileIds.has(p.sales_id)
+    if (!known && !p.sales_name) { unassigned++; return }
+    const id = p.sales_id && known ? p.sales_id : ('name:' + (p.sales_name || '-'))
+    const name = poSalesName(p)
     if (!map[id]) map[id] = { name, count: 0, value: 0 }
     map[id].count++
     map[id].value += (+p.amount || 0)

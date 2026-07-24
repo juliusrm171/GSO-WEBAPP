@@ -294,6 +294,16 @@ export async function deleteQuotation(id) {
   if (error) throw error
 }
 
+// Pricelist rahasia — di-load dari DB (RLS: engineer tidak dapat baris apa pun)
+export async function getPricelist() {
+  const { data, error } = await supabase
+    .from('pricelist_items')
+    .select('part,name,price,cat_idx,img,brand_idx')
+    .order('id')
+  if (error) throw error
+  return data || []
+}
+
 // PROFILES
 export async function getProfiles() {
   const { data, error } = await supabase.from('profiles').select('*').order('name')
